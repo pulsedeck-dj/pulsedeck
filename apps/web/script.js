@@ -75,6 +75,12 @@ function setButtonLoading(button, loading, loadingLabel, idleLabel) {
   button.textContent = loading ? loadingLabel : idleLabel;
 }
 
+function readPartyCodeFromUrl() {
+  const params = new URLSearchParams(window.location.search || '');
+  const fromParam = params.get('partyCode') || params.get('code');
+  return normalizePartyCode(fromParam);
+}
+
 function setButtonsLoading(buttons, loading) {
   for (const button of buttons) {
     button.disabled = loading;
@@ -407,11 +413,15 @@ joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const code = normalizePartyCode(partyCodeInput.value);
+  await joinPartyByCode(code);
+});
+
+async function joinPartyByCode(code) {
   if (!PARTY_CODE_PATTERN.test(code)) {
     setStatus(joinResult, 'Party code must be exactly 6 letters/numbers.', 'error');
     requestSection.classList.add('hidden');
     activePartyCode = null;
-    return;
+    return false;
   }
 
   setStatus(joinResult, `Checking party ${code}...`, 'info');
@@ -423,18 +433,20 @@ joinForm.addEventListener('submit', async (event) => {
       activePartyCode = null;
       requestSection.classList.add('hidden');
       setStatus(joinResult, 'Party found, but DJ is not active yet. Ask DJ to open the DJ app.', 'info');
-      return;
+      return false;
     }
 
     activePartyCode = code;
     requestSection.classList.remove('hidden');
     setStatus(joinResult, `Connected to party ${code}. You can send requests now.`, 'success');
+    return true;
   } catch (error) {
     activePartyCode = null;
     requestSection.classList.add('hidden');
     setStatus(joinResult, error.message || 'Unable to join party.', 'error');
+    return false;
   }
-});
+}
 
 requestForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -515,3 +527,10 @@ requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
 refreshAuthIdentity();
 toggleAppleSearchVisibility();
 checkBackendHealth();
+
+const codeFromUrl = readPartyCodeFromUrl();
+if (PARTY_CODE_PATTERN.test(codeFromUrl)) {
+  partyCodeInput.value = codeFromUrl;
+  setStatus(joinResult, `Party code ${codeFromUrl} loaded from QR link. Checking now...`, 'info');
+  joinPartyByCode(codeFromUrl);
+}

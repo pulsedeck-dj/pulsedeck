@@ -4,13 +4,16 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const QRCode = require('qrcode');
 const { io } = require('socket.io-client');
 
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
+const DEFAULT_GUEST_WEB_BASE = 'https://pulsedeck-dj.github.io/pulsedeck/';
 const DEFAULT_CONFIG = {
   apiBase: 'http://localhost:4000',
   partyCode: '',
   djKey: '',
+  guestWebBase: DEFAULT_GUEST_WEB_BASE,
   deviceName: 'DJ-Macbook',
   requestsDir: path.join(os.homedir(), 'Desktop', 'Requests'),
   autoDownload: false,
@@ -42,6 +45,19 @@ function sanitizeText(value, maxLength) {
 
 function sanitizeName(value) {
   return sanitizeText(value, 120).replace(/[\\/:*?"<>|]/g, '');
+}
+
+function sanitizeWebUrl(value, fallback = DEFAULT_GUEST_WEB_BASE) {
+  const candidate = sanitizeText(value || fallback, 400);
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return fallback;
+    }
+    return parsed.toString();
+  } catch {
+    return fallback;
+  }
 }
 
 function sanitizeBoolean(value) {
@@ -97,6 +113,7 @@ function loadConfig() {
     apiBase: sanitizeText(parsed.apiBase || DEFAULT_CONFIG.apiBase, 200),
     partyCode: normalizePartyCode(parsed.partyCode || ''),
     djKey: sanitizeText(parsed.djKey || '', 80),
+    guestWebBase: sanitizeWebUrl(parsed.guestWebBase || DEFAULT_CONFIG.guestWebBase),
     deviceName: sanitizeText(parsed.deviceName || DEFAULT_CONFIG.deviceName, 80) || DEFAULT_CONFIG.deviceName,
     requestsDir: sanitizeText(parsed.requestsDir || DEFAULT_CONFIG.requestsDir, 300) || DEFAULT_CONFIG.requestsDir,
     autoDownload: sanitizeBoolean(parsed.autoDownload),
@@ -110,6 +127,7 @@ function saveConfig(input) {
     apiBase: sanitizeText(input?.apiBase || DEFAULT_CONFIG.apiBase, 200),
     partyCode: normalizePartyCode(input?.partyCode || ''),
     djKey: sanitizeText(input?.djKey || '', 80),
+    guestWebBase: sanitizeWebUrl(input?.guestWebBase || DEFAULT_CONFIG.guestWebBase),
     deviceName: sanitizeText(input?.deviceName || DEFAULT_CONFIG.deviceName, 80) || DEFAULT_CONFIG.deviceName,
     requestsDir: sanitizeText(input?.requestsDir || DEFAULT_CONFIG.requestsDir, 300) || DEFAULT_CONFIG.requestsDir,
     autoDownload: sanitizeBoolean(input?.autoDownload),
@@ -167,6 +185,44 @@ function uniqueFolderPath(baseDir, folderName) {
 
 function shellEscape(value) {
   return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
+}
+
+function buildGuestJoinUrl(guestWebBaseInput, partyCodeInput) {
+  const partyCode = normalizePartyCode(partyCodeInput);
+  if (!PARTY_CODE_PATTERN.test(partyCode)) {
+    throw new Error('Party code must be exactly 6 letters/numbers.');
+  }
+
+  const guestWebBase = sanitizeWebUrl(guestWebBaseInput, DEFAULT_GUEST_WEB_BASE);
+  const guestUrl = new URL(guestWebBase);
+  guestUrl.searchParams.set('partyCode', partyCode);
+
+  return {
+    partyCode,
+    url: guestUrl.toString(),
+    guestWebBase
+  };
+}
+
+async function buildGuestQr(payload) {
+  const config = loadConfig();
+  const info = buildGuestJoinUrl(payload?.guestWebBase || config.guestWebBase, payload?.partyCode || config.partyCode);
+  const qrDataUrl = await QRCode.toDataURL(info.url, {
+    errorCorrectionLevel: 'M',
+    margin: 1,
+    width: 420,
+    color: {
+      dark: '#0f1322',
+      light: '#ffffffff'
+    }
+  });
+
+  return {
+    partyCode: info.partyCode,
+    guestWebBase: info.guestWebBase,
+    url: info.url,
+    qrDataUrl
+  };
 }
 
 function renderDownloadCommand(templateInput, variables) {
@@ -554,6 +610,7 @@ function createWindow() {
 app.whenReady().then(() => {
   ipcMain.handle('config:load', () => loadConfig());
   ipcMain.handle('config:save', (_event, payload) => saveConfig(payload));
+  ipcMain.handle('dj:build-guest-qr', async (_event, payload) => buildGuestQr(payload));
   ipcMain.handle('dj:connect', async (_event, payload) => connectDj(payload));
   ipcMain.handle('dj:disconnect', async () => disconnectDj('Disconnected by user'));
 

@@ -96,10 +96,21 @@ This repo includes `.github/workflows/pages.yml` to publish the web UI to GitHub
 Expected Pages URL:
 - `https://pulsedeck-dj.github.io/pulsedeck/`
 
+Note: `https://pulsedeck-dj.github.io/` may show 404 for this project site. Use the `/pulsedeck/` path.
+
 Before enabling Pages, set repository variable:
 - `PULSE_API_BASE` = your public backend URL (for example your Render app URL).
 
 Without `PULSE_API_BASE`, the GitHub Pages frontend will load but API calls will fail.
+
+## DJ QR Flow
+
+In the DJ desktop app:
+- set `Guest Website URL` to your public request site (default is GitHub Pages)
+- click `Show Guest QR`
+- a full-screen party card opens with party code + QR
+
+The QR opens the web page with `partyCode` prefilled in URL.
 
 ## DJ Auto-Download Command (Optional)
 

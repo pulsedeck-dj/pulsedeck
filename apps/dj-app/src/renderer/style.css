@@ -196,7 +196,7 @@ input[type='checkbox'] {
 .button-row {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -230,6 +230,11 @@ input[type='checkbox'] {
   border: 1px solid #d7c9af;
 }
 
+.btn-accent {
+  color: #fff;
+  background: linear-gradient(95deg, #8f46ff, #d643f8);
+}
+
 .status-text {
   margin: 12px 0 0;
   font-size: 0.9rem;
@@ -240,6 +245,99 @@ input[type='checkbox'] {
   margin: 10px 0 0;
   font-size: 0.78rem;
   color: #505a70;
+}
+
+.qr-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 10, 17, 0.7);
+  backdrop-filter: blur(7px);
+  display: grid;
+  place-items: center;
+  z-index: 30;
+  padding: 18px;
+}
+
+.qr-stage {
+  position: relative;
+  width: min(560px, 95vw);
+}
+
+.qr-light {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(26px);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.qr-light-a {
+  width: 190px;
+  height: 190px;
+  top: -35px;
+  left: -20px;
+  background: radial-gradient(circle, rgba(0, 189, 255, 0.75), rgba(0, 189, 255, 0));
+}
+
+.qr-light-b {
+  width: 210px;
+  height: 210px;
+  right: -30px;
+  bottom: -45px;
+  background: radial-gradient(circle, rgba(255, 102, 73, 0.8), rgba(255, 102, 73, 0));
+}
+
+.qr-card {
+  position: relative;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.72));
+  box-shadow: 0 20px 34px rgba(8, 11, 25, 0.4);
+  padding: 18px;
+  text-align: center;
+}
+
+.qr-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.qr-party-code {
+  margin: 10px 0 4px;
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: clamp(2.2rem, 8vw, 3.7rem);
+  letter-spacing: 0.1em;
+  line-height: 0.95;
+}
+
+.qr-subtitle {
+  margin: 0 auto;
+  max-width: 44ch;
+  color: #43506a;
+  font-size: 0.9rem;
+}
+
+.qr-image {
+  width: min(360px, 78vw);
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  margin-top: 14px;
+  border-radius: 16px;
+  border: 1px solid #ddd2c2;
+  background: #fff;
+  padding: 10px;
+}
+
+.qr-url {
+  margin: 11px 0 0;
+  font-size: 0.8rem;
+  color: #455166;
+  word-break: break-all;
+}
+
+.hidden {
+  display: none;
 }
 
 code {
