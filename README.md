@@ -16,9 +16,10 @@ PulseDeck is a full party request platform:
 - Private DJ key required to claim active DJ role
 - Realtime request delivery to DJ desktop app
 - Apple Music search endpoint for web picker
+- Paste-link autofill for Apple Music / Spotify / YouTube (title + artist)
 - Idempotent request submission (`X-Idempotency-Key`)
 - Multi-window web UX (`Guest`, `DJ`, `Setup`) with runtime backend URL configuration
-- DJ queue dashboard with activity log, played history, and guest QR modal
+- DJ queue dashboard with stage view, activity log, played history, and guest QR modal
 - DJ desktop tabs (`Booth`, `Requests`, `Share`) for fast live use
 
 ## Requirements
@@ -138,6 +139,7 @@ From repo root:
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `GET /api/music/apple/search?term=...&limit=8&storefront=us`
+- `GET /api/music/metadata?service=Spotify&url=...`
 - `POST /api/parties` (Bearer token required)
 - `POST /api/parties/:code/claim-dj`
 - `POST /api/parties/:code/heartbeat` (`X-DJ-Token`)
