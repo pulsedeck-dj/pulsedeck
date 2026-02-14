@@ -89,6 +89,18 @@ Users then:
 
 If local mac builds fail with a `7zip-bin` `ENOENT` error, move the repo to a path without spaces before running `npm run build:dj:mac`.
 
+## GitHub Pages Link
+
+This repo includes `.github/workflows/pages.yml` to publish the web UI to GitHub Pages.
+
+Expected Pages URL:
+- `https://pulsedeck-dj.github.io/pulsedeck/`
+
+Before enabling Pages, set repository variable:
+- `PULSE_API_BASE` = your public backend URL (for example your Render app URL).
+
+Without `PULSE_API_BASE`, the GitHub Pages frontend will load but API calls will fail.
+
 ## DJ Auto-Download Command (Optional)
 
 In DJ app settings, enable **Auto-download Apple Music requests** and set a command template.
