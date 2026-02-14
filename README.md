@@ -19,6 +19,7 @@ PulseDeck is a full party request platform:
 - Idempotent request submission (`X-Idempotency-Key`)
 - Multi-window web UX (`Guest`, `DJ`, `Setup`) with runtime backend URL configuration
 - DJ queue dashboard with activity log and guest QR modal
+- DJ desktop tabs (`Booth`, `Requests`, `Share`) for fast live use
 
 ## Requirements
 - Node.js 20+

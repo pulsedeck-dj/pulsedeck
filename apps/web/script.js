@@ -6,10 +6,7 @@ function trimApiBase(value) {
 
 function detectDefaultApiBase() {
   const { hostname, port } = window.location;
-  if (hostname === 'localhost' && port === '5173') {
-    return 'http://localhost:4000';
-  }
-  if (hostname === '127.0.0.1' && port === '5173') {
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && port === '5173') {
     return 'http://localhost:4000';
   }
   return '';
@@ -53,9 +50,11 @@ const tabGuest = document.getElementById('tabGuest');
 const tabDj = document.getElementById('tabDj');
 const tabSetup = document.getElementById('tabSetup');
 const tabStatus = document.getElementById('tabStatus');
+const tabHelp = document.getElementById('tabHelp');
 const openSetupBtn = document.getElementById('openSetupBtn');
+
 const windowPanels = Array.from(document.querySelectorAll('.window-panel'));
-const windowTabs = [tabGuest, tabDj, tabSetup, tabStatus];
+const windowTabs = [tabGuest, tabDj, tabSetup, tabStatus, tabHelp];
 
 const authForm = document.getElementById('authForm');
 const authEmailInput = document.getElementById('authEmail');
@@ -74,6 +73,11 @@ const djKeyOut = document.getElementById('djKeyOut');
 const djSecrets = document.getElementById('djSecrets');
 const copyPartyCodeBtn = document.getElementById('copyPartyCodeBtn');
 const copyDjKeyBtn = document.getElementById('copyDjKeyBtn');
+
+const djSharePanel = document.getElementById('djSharePanel');
+const djGuestLinkOut = document.getElementById('djGuestLinkOut');
+const copyGuestLinkBtn = document.getElementById('copyGuestLinkBtn');
+const openGuestWindowBtn = document.getElementById('openGuestWindowBtn');
 
 const joinForm = document.getElementById('joinForm');
 const partyCodeInput = document.getElementById('partyCode');
@@ -118,6 +122,10 @@ let backendChecked = false;
 let lastCreatedPartyCode = '';
 let guestRequestCount = 0;
 let guestLastRequest = '';
+
+let joinDebounceTimer = null;
+let joinInFlight = false;
+let lastAutoJoinCode = '';
 
 function normalizePartyCode(value) {
   return String(value || '')
@@ -243,6 +251,30 @@ function resetDjSecrets() {
   partyCodeOut.textContent = '------';
   djKeyOut.textContent = '----------';
   djSecrets.classList.add('hidden');
+
+  djSharePanel.classList.add('hidden');
+  djGuestLinkOut.textContent = '';
+}
+
+function buildGuestShareUrl(code) {
+  const partyCode = normalizePartyCode(code);
+  if (!PARTY_CODE_PATTERN.test(partyCode)) return '';
+
+  const base = new URL(window.location.href);
+  base.searchParams.set('partyCode', partyCode);
+  return base.toString();
+}
+
+function setDjSharePanel(code) {
+  const url = buildGuestShareUrl(code);
+  if (!url) {
+    djSharePanel.classList.add('hidden');
+    djGuestLinkOut.textContent = '';
+    return;
+  }
+
+  djGuestLinkOut.textContent = url;
+  djSharePanel.classList.remove('hidden');
 }
 
 function makeIdempotencyKey() {
@@ -545,6 +577,83 @@ function fillRequestFieldsFromSearchResult(result) {
   setStatus(appleSearchStatus, `Selected ${result.title} - ${result.artist}`, 'success');
 }
 
+async function submitSongRequest(input, options = {}) {
+  if (!activePartyCode) {
+    setStatus(requestResult, 'Join a live party first.', 'error');
+    return false;
+  }
+
+  const service = String(input?.service || '').trim();
+  const title = String(input?.title || '').trim();
+  const artist = String(input?.artist || '').trim();
+  const appleMusicUrl = String(input?.appleMusicUrl || '').trim();
+
+  if (!ALLOWED_SERVICES.has(service)) {
+    setStatus(requestResult, 'Choose a valid music service.', 'error');
+    return false;
+  }
+
+  if (!title || title.length > 120) {
+    setStatus(requestResult, 'Song title is required (max 120 chars).', 'error');
+    return false;
+  }
+
+  if (!artist || artist.length > 120) {
+    setStatus(requestResult, 'Artist is required (max 120 chars).', 'error');
+    return false;
+  }
+
+  if (!isValidSongUrl(appleMusicUrl, service)) {
+    setStatus(requestResult, 'Song URL must be a valid HTTPS link.', 'error');
+    return false;
+  }
+
+  const submitButton = requestForm.querySelector('button[type="submit"]');
+  if (options.loading !== false) {
+    setButtonLoading(submitButton, true, 'Submitting...', 'Submit Request');
+  }
+  setStatus(requestResult, 'Submitting request to DJ queue...', 'info');
+
+  try {
+    const data = await apiRequest(`/api/parties/${activePartyCode}/requests`, {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': makeIdempotencyKey()
+      },
+      body: {
+        service,
+        title,
+        artist,
+        appleMusicUrl
+      }
+    });
+
+    setStatus(requestResult, `Queued #${data.seqNo}: ${data.title} - ${data.artist}`, 'success');
+
+    guestRequestCount += 1;
+    guestLastRequest = `Last request: ${data.title} - ${data.artist}`;
+    updateGuestSummary();
+
+    pushTimeline('success', `Guest submitted #${data.seqNo}: ${data.title} - ${data.artist}`);
+
+    document.getElementById('title').value = '';
+    document.getElementById('artist').value = '';
+    document.getElementById('appleMusicUrl').value = '';
+    appleSearchTermInput.value = '';
+    appleSearchResults.textContent = '';
+    toggleAppleSearchVisibility();
+
+    return true;
+  } catch (error) {
+    setStatus(requestResult, error.message || 'Request failed.', 'error');
+    return false;
+  } finally {
+    if (options.loading !== false) {
+      setButtonLoading(submitButton, false, 'Submitting...', 'Submit Request');
+    }
+  }
+}
+
 function renderAppleSearchResults(items) {
   appleSearchResults.textContent = '';
 
@@ -553,7 +662,7 @@ function renderAppleSearchResults(items) {
     return;
   }
 
-  setStatus(appleSearchStatus, `Found ${items.length} result(s). Pick one to autofill.`, 'success');
+  setStatus(appleSearchStatus, `Found ${items.length} result(s). Pick one to autofill or request instantly.`, 'success');
 
   for (const item of items) {
     const card = document.createElement('article');
@@ -574,14 +683,44 @@ function renderAppleSearchResults(items) {
     sub.className = 'search-sub';
     sub.textContent = `${item.artist || 'Unknown artist'}${item.album ? ` • ${item.album}` : ''}`;
 
-    const chooseButton = document.createElement('button');
-    chooseButton.type = 'button';
-    chooseButton.className = 'btn btn-primary';
-    chooseButton.textContent = 'Use Song';
-    chooseButton.addEventListener('click', () => fillRequestFieldsFromSearchResult(item));
-
     meta.append(title, sub);
-    card.append(image, meta, chooseButton);
+
+    const actions = document.createElement('div');
+    actions.className = 'search-actions';
+
+    const autofillButton = document.createElement('button');
+    autofillButton.type = 'button';
+    autofillButton.className = 'btn btn-ghost';
+    autofillButton.textContent = 'Autofill';
+    autofillButton.addEventListener('click', () => fillRequestFieldsFromSearchResult(item));
+
+    const requestButton = document.createElement('button');
+    requestButton.type = 'button';
+    requestButton.className = 'btn btn-primary';
+    requestButton.textContent = 'Request Song';
+    requestButton.addEventListener('click', async () => {
+      if (!activePartyCode) {
+        setStatus(requestResult, 'Join a live party first.', 'error');
+        return;
+      }
+
+      const ok = await submitSongRequest(
+        {
+          service: 'Apple Music',
+          title: item.title,
+          artist: item.artist,
+          appleMusicUrl: item.url
+        },
+        { loading: true }
+      );
+
+      if (ok) {
+        setStatus(appleSearchStatus, `Requested ${item.title} - ${item.artist}`, 'success');
+      }
+    });
+
+    actions.append(autofillButton, requestButton);
+    card.append(image, meta, actions);
     appleSearchResults.appendChild(card);
   }
 }
@@ -653,6 +792,30 @@ async function joinPartyByCode(code) {
     updateSystemStatus();
     return false;
   }
+}
+
+function scheduleAutoJoin(code) {
+  if (joinDebounceTimer) {
+    clearTimeout(joinDebounceTimer);
+  }
+
+  const normalized = normalizePartyCode(code);
+  if (!apiBase) return;
+  if (!PARTY_CODE_PATTERN.test(normalized)) return;
+  if (normalized === activePartyCode) return;
+  if (normalized === lastAutoJoinCode) return;
+
+  joinDebounceTimer = setTimeout(async () => {
+    if (joinInFlight) return;
+    joinInFlight = true;
+    lastAutoJoinCode = normalized;
+
+    try {
+      await joinPartyByCode(normalized);
+    } finally {
+      joinInFlight = false;
+    }
+  }, 450);
 }
 
 windowTabs.forEach((tab) => {
@@ -732,6 +895,7 @@ clearApiBaseBtn.addEventListener('click', () => {
 
 partyCodeInput.addEventListener('input', () => {
   partyCodeInput.value = normalizePartyCode(partyCodeInput.value);
+  scheduleAutoJoin(partyCodeInput.value);
 });
 
 registerBtn.addEventListener('click', () => {
@@ -779,6 +943,8 @@ createPartyBtn.addEventListener('click', async () => {
     lastCreatedPartyCode = data.code;
     updateSystemStatus();
 
+    setDjSharePanel(data.code);
+
     setStatus(
       createResult,
       `Party ${data.code} created. Save the DJ key now and use it only in the DJ app.`,
@@ -809,82 +975,43 @@ copyDjKeyBtn.addEventListener('click', async () => {
   await copySecret('DJ key', djKeyOut.textContent);
 });
 
+copyGuestLinkBtn.addEventListener('click', async () => {
+  const url = String(djGuestLinkOut.textContent || '').trim();
+  if (!url) {
+    setStatus(createResult, 'Create a party first to get a guest link.', 'error');
+    return;
+  }
+
+  const ok = await copyToClipboard(url);
+  if (ok) {
+    setStatus(createResult, 'Guest link copied.', 'success');
+    pushTimeline('success', 'Guest link copied to clipboard.');
+  } else {
+    setStatus(createResult, 'Could not copy guest link.', 'error');
+  }
+});
+
+openGuestWindowBtn.addEventListener('click', () => {
+  setWindow('guest');
+});
+
 joinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const code = normalizePartyCode(partyCodeInput.value);
+  lastAutoJoinCode = code;
   await joinPartyByCode(code);
 });
 
 requestForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  if (!activePartyCode) {
-    setStatus(requestResult, 'Join a live party first.', 'error');
-    return;
-  }
-
-  const service = readSelectedService();
-  const title = String(document.getElementById('title').value || '').trim();
-  const artist = String(document.getElementById('artist').value || '').trim();
-  const appleMusicUrl = String(document.getElementById('appleMusicUrl').value || '').trim();
-
-  if (!ALLOWED_SERVICES.has(service)) {
-    setStatus(requestResult, 'Choose a valid music service.', 'error');
-    return;
-  }
-
-  if (!title || title.length > 120) {
-    setStatus(requestResult, 'Song title is required (max 120 chars).', 'error');
-    return;
-  }
-
-  if (!artist || artist.length > 120) {
-    setStatus(requestResult, 'Artist is required (max 120 chars).', 'error');
-    return;
-  }
-
-  if (!isValidSongUrl(appleMusicUrl, service)) {
-    setStatus(requestResult, 'Song URL must be a valid HTTPS link.', 'error');
-    return;
-  }
-
-  const submitButton = requestForm.querySelector('button[type="submit"]');
-  setButtonLoading(submitButton, true, 'Submitting...', 'Submit Request');
-  setStatus(requestResult, 'Submitting request to DJ queue...', 'info');
-
-  try {
-    const data = await apiRequest(`/api/parties/${activePartyCode}/requests`, {
-      method: 'POST',
-      headers: {
-        'X-Idempotency-Key': makeIdempotencyKey()
-      },
-      body: {
-        service,
-        title,
-        artist,
-        appleMusicUrl
-      }
-    });
-
-    setStatus(requestResult, `Queued #${data.seqNo}: ${data.title} - ${data.artist}`, 'success');
-
-    guestRequestCount += 1;
-    guestLastRequest = `Last request: ${data.title} - ${data.artist}`;
-    updateGuestSummary();
-    pushTimeline('success', `Guest submitted #${data.seqNo}: ${data.title} - ${data.artist}`);
-
-    document.getElementById('title').value = '';
-    document.getElementById('artist').value = '';
-    document.getElementById('appleMusicUrl').value = '';
-    appleSearchTermInput.value = '';
-    appleSearchResults.textContent = '';
-    toggleAppleSearchVisibility();
-  } catch (error) {
-    setStatus(requestResult, error.message || 'Request failed.', 'error');
-  } finally {
-    setButtonLoading(submitButton, false, 'Submitting...', 'Submit Request');
-  }
+  await submitSongRequest({
+    service: readSelectedService(),
+    title: String(document.getElementById('title').value || ''),
+    artist: String(document.getElementById('artist').value || ''),
+    appleMusicUrl: String(document.getElementById('appleMusicUrl').value || '')
+  });
 });
 
 appleSearchBtn.addEventListener('click', () => {
@@ -925,6 +1052,7 @@ updateSystemStatus();
     partyCodeInput.value = codeFromUrl;
     setStatus(joinResult, `Party code ${codeFromUrl} loaded from QR link. Checking now...`, 'info');
     pushTimeline('info', `QR party link opened for ${codeFromUrl}.`);
+    lastAutoJoinCode = codeFromUrl;
     await joinPartyByCode(codeFromUrl);
     return;
   }

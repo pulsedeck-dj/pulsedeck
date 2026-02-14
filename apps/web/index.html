@@ -43,6 +43,7 @@
         <button id="tabDj" class="window-tab" type="button" data-window="dj">DJ Window</button>
         <button id="tabSetup" class="window-tab" type="button" data-window="setup">Setup Window</button>
         <button id="tabStatus" class="window-tab" type="button" data-window="status">Status Window</button>
+        <button id="tabHelp" class="window-tab" type="button" data-window="help">Help Window</button>
       </nav>
 
       <section id="guestWindow" class="window-panel reveal delay-2" data-window="guest">
@@ -180,6 +181,15 @@
               </div>
             </div>
 
+            <div id="djSharePanel" class="share-mini hidden" aria-live="polite">
+              <p class="mini-label">Guest Link</p>
+              <p id="djGuestLinkOut" class="share-link"></p>
+              <div class="button-row">
+                <button id="copyGuestLinkBtn" class="btn btn-secondary" type="button">Copy Guest Link</button>
+                <button id="openGuestWindowBtn" class="btn btn-ghost" type="button">Open Guest Window</button>
+              </div>
+            </div>
+
             <p class="micro-note">
               Share the party code publicly. Keep the DJ key private and only enter it in PulseDeck DJ desktop.
             </p>
@@ -265,6 +275,43 @@
               <button id="clearTimelineBtn" class="btn btn-ghost" type="button">Clear</button>
             </div>
             <div id="eventTimeline" class="timeline-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="helpWindow" class="window-panel hidden" data-window="help">
+        <div class="panel-grid panel-grid-2">
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Download DJ App</h2>
+              <span class="chip">macOS</span>
+            </div>
+            <p class="panel-copy">
+              PulseDeck DJ is a downloadable macOS desktop app. Install it to claim the DJ role and receive requests in
+              realtime.
+            </p>
+            <a
+              class="btn btn-primary"
+              href="https://github.com/pulsedeck-dj/pulsedeck/releases"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Open Releases
+            </a>
+            <p class="micro-note">Tip: Always download the latest `.dmg` from Releases.</p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Troubleshooting</h2>
+              <span class="chip">Fix</span>
+            </div>
+            <ul class="help-list">
+              <li><strong>Backend not configured:</strong> open Setup Window and set your API Base URL.</li>
+              <li><strong>DJ not active:</strong> the DJ must open the DJ app and click Connect for that party code.</li>
+              <li><strong>Apple Music search missing:</strong> your backend needs an Apple Music developer token set.</li>
+              <li><strong>Keep DJ key private:</strong> only paste it into PulseDeck DJ desktop.</li>
+            </ul>
           </article>
         </div>
       </section>

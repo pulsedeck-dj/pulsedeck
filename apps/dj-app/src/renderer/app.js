@@ -16,8 +16,11 @@ const clearLogBtn = document.getElementById('clearLogBtn');
 
 const tabBoothBtn = document.getElementById('tabBoothBtn');
 const tabRequestsBtn = document.getElementById('tabRequestsBtn');
+const tabShareBtn = document.getElementById('tabShareBtn');
+
 const boothWindow = document.getElementById('boothWindow');
 const requestsWindow = document.getElementById('requestsWindow');
+const shareWindow = document.getElementById('shareWindow');
 
 const statusPill = document.getElementById('statusPill');
 const statusText = document.getElementById('statusText');
@@ -25,6 +28,15 @@ const requestsList = document.getElementById('requestsList');
 const requestCount = document.getElementById('requestCount');
 const requestCountTab = document.getElementById('requestCountTab');
 const logList = document.getElementById('logList');
+
+const sharePartyCode = document.getElementById('sharePartyCode');
+const shareGuestUrl = document.getElementById('shareGuestUrl');
+const shareQrImage = document.getElementById('shareQrImage');
+const shareRefreshBtn = document.getElementById('shareRefreshBtn');
+const shareCopyCodeBtn = document.getElementById('shareCopyCodeBtn');
+const shareCopyUrlBtn = document.getElementById('shareCopyUrlBtn');
+const shareFullscreenBtn = document.getElementById('shareFullscreenBtn');
+const shareCopyQrUrlBtn = document.getElementById('shareCopyQrUrlBtn');
 
 const qrModal = document.getElementById('qrModal');
 const qrCloseBtn = document.getElementById('qrCloseBtn');
@@ -35,6 +47,7 @@ const qrUrl = document.getElementById('qrUrl');
 let unsubscribe = null;
 let queueItems = [];
 let activeWindow = 'booth';
+let lastSharePayload = null;
 
 function normalizePartyCode(value) {
   return String(value || '')
@@ -53,13 +66,18 @@ function setWindow(windowName) {
   activeWindow = windowName;
 
   const isBooth = windowName === 'booth';
+  const isRequests = windowName === 'requests';
+  const isShare = windowName === 'share';
+
   boothWindow.classList.toggle('hidden', !isBooth);
-  requestsWindow.classList.toggle('hidden', isBooth);
+  requestsWindow.classList.toggle('hidden', !isRequests);
+  shareWindow.classList.toggle('hidden', !isShare);
 
   tabBoothBtn.classList.toggle('is-active', isBooth);
-  tabRequestsBtn.classList.toggle('is-active', !isBooth);
+  tabRequestsBtn.classList.toggle('is-active', isRequests);
+  tabShareBtn.classList.toggle('is-active', isShare);
 
-  if (!isBooth) {
+  if (isRequests) {
     tabRequestsBtn.classList.remove('has-alert');
   }
 }
@@ -287,6 +305,60 @@ async function copyToClipboard(text) {
   }
 }
 
+function setSharePlaceholder(message) {
+  const partyCode = normalizePartyCode(partyCodeInput.value);
+  sharePartyCode.textContent = partyCode || '------';
+  shareGuestUrl.textContent = message || 'Set party code to generate link.';
+  shareQrImage.removeAttribute('src');
+  shareQrImage.classList.add('hidden');
+  lastSharePayload = null;
+}
+
+function applySharePayload(payload) {
+  lastSharePayload = payload;
+
+  sharePartyCode.textContent = payload.partyCode;
+  shareGuestUrl.textContent = payload.url;
+
+  shareQrImage.src = payload.qrDataUrl;
+  shareQrImage.classList.remove('hidden');
+}
+
+function applySharePayloadToModal(payload) {
+  qrPartyCode.textContent = payload.partyCode;
+  qrImage.src = payload.qrDataUrl;
+  qrUrl.textContent = payload.url;
+}
+
+async function refreshShare({ openModal } = {}) {
+  const partyCode = normalizePartyCode(partyCodeInput.value);
+  if (!partyCode) {
+    setSharePlaceholder('Enter a party code first.');
+    appendLog('warning', 'Share card needs a party code.', new Date().toISOString());
+    return null;
+  }
+
+  try {
+    const payload = await window.djApi.buildGuestQr({
+      partyCode,
+      guestWebBase: String(guestWebBaseInput.value || '').trim()
+    });
+
+    applySharePayload(payload);
+
+    if (openModal) {
+      applySharePayloadToModal(payload);
+      setQrVisible(true);
+    }
+
+    return payload;
+  } catch (error) {
+    setSharePlaceholder('Could not build guest link. Check party code and guest URL.');
+    appendLog('error', error.message || 'Could not generate share card.', new Date().toISOString());
+    return null;
+  }
+}
+
 async function copyPartyCode() {
   const partyCode = normalizePartyCode(partyCodeInput.value);
   if (!partyCode) {
@@ -303,26 +375,21 @@ async function copyPartyCode() {
 }
 
 async function copyGuestUrl() {
-  try {
-    const payload = await window.djApi.buildGuestQr({
-      partyCode: normalizePartyCode(partyCodeInput.value),
-      guestWebBase: String(guestWebBaseInput.value || '').trim()
-    });
+  const payload = lastSharePayload || (await refreshShare());
+  if (!payload) return;
 
-    const ok = await copyToClipboard(payload.url);
-    if (ok) {
-      appendLog('success', 'Guest URL copied to clipboard.', new Date().toISOString());
-    } else {
-      appendLog('error', 'Could not copy guest URL.', new Date().toISOString());
-    }
-  } catch (error) {
-    appendLog('error', error.message || 'Could not build guest URL.', new Date().toISOString());
+  const ok = await copyToClipboard(payload.url);
+  if (ok) {
+    appendLog('success', 'Guest URL copied to clipboard.', new Date().toISOString());
+  } else {
+    appendLog('error', 'Could not copy guest URL.', new Date().toISOString());
   }
 }
 
 async function initialize() {
   clearQueue();
   setStatus('idle', 'Loading settings...');
+  setSharePlaceholder('Set party code to generate link.');
 
   const config = await window.djApi.loadConfig();
   writeFormConfig(config);
@@ -365,12 +432,24 @@ tabRequestsBtn.addEventListener('click', () => {
   setWindow('requests');
 });
 
+tabShareBtn.addEventListener('click', () => {
+  setWindow('share');
+});
+
 jumpRequestsBtn.addEventListener('click', () => {
   setWindow('requests');
 });
 
 partyCodeInput.addEventListener('input', () => {
   partyCodeInput.value = normalizePartyCode(partyCodeInput.value);
+
+  const partyCode = normalizePartyCode(partyCodeInput.value);
+  if (!partyCode) {
+    setSharePlaceholder('Set party code to generate link.');
+  } else if (!lastSharePayload || lastSharePayload.partyCode !== partyCode) {
+    sharePartyCode.textContent = partyCode;
+    shareGuestUrl.textContent = 'Click Generate / Refresh to update QR.';
+  }
 });
 
 saveBtn.addEventListener('click', async () => {
@@ -408,20 +487,10 @@ disconnectBtn.addEventListener('click', async () => {
 });
 
 showQrBtn.addEventListener('click', async () => {
-  try {
-    const payload = await window.djApi.buildGuestQr({
-      partyCode: normalizePartyCode(partyCodeInput.value),
-      guestWebBase: String(guestWebBaseInput.value || '').trim()
-    });
-
-    qrPartyCode.textContent = payload.partyCode;
-    qrImage.src = payload.qrDataUrl;
-    qrUrl.textContent = payload.url;
-    setQrVisible(true);
-
+  setWindow('share');
+  const payload = await refreshShare({ openModal: true });
+  if (payload) {
     appendLog('success', `Guest QR generated for party ${payload.partyCode}.`, new Date().toISOString());
-  } catch (error) {
-    appendLog('error', error.message || 'Could not generate guest QR.', new Date().toISOString());
   }
 });
 
@@ -436,6 +505,33 @@ copyGuestUrlBtn.addEventListener('click', () => {
 clearLogBtn.addEventListener('click', () => {
   logList.textContent = '';
   appendLog('info', 'Activity log cleared.', new Date().toISOString());
+});
+
+shareRefreshBtn.addEventListener('click', async () => {
+  const payload = await refreshShare();
+  if (payload) {
+    appendLog('success', 'Share card refreshed.', new Date().toISOString());
+  }
+});
+
+shareCopyCodeBtn.addEventListener('click', () => {
+  copyPartyCode();
+});
+
+shareCopyUrlBtn.addEventListener('click', () => {
+  copyGuestUrl();
+});
+
+shareCopyQrUrlBtn.addEventListener('click', () => {
+  copyGuestUrl();
+});
+
+shareFullscreenBtn.addEventListener('click', async () => {
+  const payload = lastSharePayload || (await refreshShare());
+  if (!payload) return;
+
+  applySharePayloadToModal(payload);
+  setQrVisible(true);
 });
 
 qrCloseBtn.addEventListener('click', () => {

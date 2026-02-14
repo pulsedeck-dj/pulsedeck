@@ -30,6 +30,7 @@
           Requests
           <span id="requestCountTab" class="tab-count">0</span>
         </button>
+        <button id="tabShareBtn" class="window-tab" type="button">Share</button>
       </nav>
 
       <section id="boothWindow" class="window-panel">
@@ -93,6 +94,51 @@
               <button id="clearLogBtn" class="btn btn-ghost btn-mini" type="button">Clear Log</button>
             </div>
             <div id="logList" class="log-list"></div>
+          </article>
+        </section>
+      </section>
+
+      <section id="shareWindow" class="window-panel hidden">
+        <section class="grid-two">
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Share To Guests</h2>
+              <span class="count-pill">Live</span>
+            </div>
+
+            <div class="share-grid">
+              <div class="share-block">
+                <p class="share-label">Party Code</p>
+                <p id="sharePartyCode" class="share-code">------</p>
+              </div>
+
+              <div class="share-block">
+                <p class="share-label">Guest URL</p>
+                <p id="shareGuestUrl" class="share-url">Set party code to generate link.</p>
+              </div>
+            </div>
+
+            <div class="share-actions">
+              <button id="shareRefreshBtn" class="btn btn-primary" type="button">Generate / Refresh</button>
+              <button id="shareCopyCodeBtn" class="btn btn-ghost" type="button">Copy Code</button>
+              <button id="shareCopyUrlBtn" class="btn btn-ghost" type="button">Copy Guest URL</button>
+              <button id="shareFullscreenBtn" class="btn btn-accent" type="button">Fullscreen QR</button>
+            </div>
+
+            <p class="hint">
+              Guests should open the request website, enter the party code, and pick a song. Keep DJ key private.
+            </p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Guest QR</h2>
+              <button id="shareCopyQrUrlBtn" class="btn btn-ghost btn-mini" type="button">Copy QR URL</button>
+            </div>
+            <div class="share-qr-wrap">
+              <img id="shareQrImage" class="share-qr" alt="Guest QR code" />
+              <p class="micro-note">Tip: Tap Fullscreen QR before the crowd arrives.</p>
+            </div>
           </article>
         </section>
       </section>
