@@ -1,6 +1,6 @@
 {
   "name": "dj-app",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "PulseDeck macOS DJ desktop app",
   "author": "PulseDeck",
   "private": true,
@@ -34,6 +34,7 @@
     },
     "mac": {
       "category": "public.app-category.music",
+      "icon": "build/icon.icns",
       "target": [
         "dmg"
       ],

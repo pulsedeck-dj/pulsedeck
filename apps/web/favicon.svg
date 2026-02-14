@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1024 1024" role="img" aria-label="PulseDeck">
+  <defs>
+    <linearGradient id="pd-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d6efd" />
+      <stop offset="0.55" stop-color="#00b9ff" />
+      <stop offset="1" stop-color="#00d4d1" />
+    </linearGradient>
+    <radialGradient id="pd-sheen" cx="0.2" cy="0.15" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55" />
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect x="88" y="88" width="848" height="848" rx="220" fill="url(#pd-bg)" />
+  <rect x="88" y="88" width="848" height="848" rx="220" fill="url(#pd-sheen)" />
+
+  <path
+    d="M 190 540 L 340 540 L 410 360 L 510 690 L 610 430 L 690 620 L 760 470 L 834 540 L 920 540"
+    fill="none"
+    stroke="#ffffff"
+    stroke-opacity="0.22"
+    stroke-width="110"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M 190 540 L 340 540 L 410 360 L 510 690 L 610 430 L 690 620 L 760 470 L 834 540 L 920 540"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="78"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
+
