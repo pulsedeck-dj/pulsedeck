@@ -77,6 +77,9 @@ function toRequestView(request, partyCode) {
     artist: request.artist,
     service: request.service,
     appleMusicUrl: request.appleMusicUrl || '',
+    status: request.status || 'queued',
+    playedAt: request.playedAt || null,
+    playedBy: request.playedBy || '',
     createdAt: request.createdAt
   };
 }
@@ -425,4 +428,78 @@ export async function validateDjSocketRegistration(codeInput, sessionIdInput, to
     partyCode: party.code,
     deviceName: auth.session.deviceName
   };
+}
+
+function normalizeRequestId(value) {
+  return sanitizeText(value, 128);
+}
+
+export async function markRequestPlayed(codeInput, requestIdInput, sessionIdInput, tokenInput) {
+  const code = normalizePartyCode(codeInput);
+  const requestId = normalizeRequestId(requestIdInput);
+  if (!code) return { error: 'invalid_party_code' };
+  if (!requestId) return { error: 'invalid_request_id' };
+
+  const party = await prisma.party.findUnique({
+    where: { code },
+    include: { activeDjSession: true }
+  });
+
+  const auth = validateDjCredentials(party, sessionIdInput, tokenInput);
+  if (auth.error) return auth;
+
+  const existing = await prisma.songRequest.findFirst({
+    where: { id: requestId, partyId: party.id }
+  });
+  if (!existing) return { error: 'request_not_found' };
+
+  if (existing.status === 'played') {
+    return { request: toRequestView(existing, party.code), unchanged: true };
+  }
+
+  const updated = await prisma.songRequest.update({
+    where: { id: existing.id },
+    data: {
+      status: 'played',
+      playedAt: new Date(),
+      playedBy: auth.session.deviceName
+    }
+  });
+
+  return { request: toRequestView(updated, party.code), unchanged: false };
+}
+
+export async function markRequestQueued(codeInput, requestIdInput, sessionIdInput, tokenInput) {
+  const code = normalizePartyCode(codeInput);
+  const requestId = normalizeRequestId(requestIdInput);
+  if (!code) return { error: 'invalid_party_code' };
+  if (!requestId) return { error: 'invalid_request_id' };
+
+  const party = await prisma.party.findUnique({
+    where: { code },
+    include: { activeDjSession: true }
+  });
+
+  const auth = validateDjCredentials(party, sessionIdInput, tokenInput);
+  if (auth.error) return auth;
+
+  const existing = await prisma.songRequest.findFirst({
+    where: { id: requestId, partyId: party.id }
+  });
+  if (!existing) return { error: 'request_not_found' };
+
+  if (existing.status === 'queued') {
+    return { request: toRequestView(existing, party.code), unchanged: true };
+  }
+
+  const updated = await prisma.songRequest.update({
+    where: { id: existing.id },
+    data: {
+      status: 'queued',
+      playedAt: null,
+      playedBy: null
+    }
+  });
+
+  return { request: toRequestView(updated, party.code), unchanged: false };
 }

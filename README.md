@@ -18,7 +18,7 @@ PulseDeck is a full party request platform:
 - Apple Music search endpoint for web picker
 - Idempotent request submission (`X-Idempotency-Key`)
 - Multi-window web UX (`Guest`, `DJ`, `Setup`) with runtime backend URL configuration
-- DJ queue dashboard with activity log and guest QR modal
+- DJ queue dashboard with activity log, played history, and guest QR modal
 - DJ desktop tabs (`Booth`, `Requests`, `Share`) for fast live use
 
 ## Requirements
@@ -144,6 +144,8 @@ From repo root:
 - `POST /api/parties/:code/join`
 - `POST /api/parties/:code/requests` (`X-Idempotency-Key`)
 - `GET /api/parties/:code/requests` (`X-DJ-Session-ID`, `X-DJ-Token`)
+- `POST /api/parties/:code/requests/:id/played` (`X-DJ-Session-ID`, `X-DJ-Token`)
+- `POST /api/parties/:code/requests/:id/queued` (`X-DJ-Session-ID`, `X-DJ-Token`)
 
 ## Notes
 - Apple Music search uses Apple Music API when `APPLE_MUSIC_DEVELOPER_TOKEN` is set, otherwise it falls back to iTunes Search.

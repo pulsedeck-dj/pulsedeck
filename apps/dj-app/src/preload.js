@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('djApi', {
   buildGuestQr: (payload) => ipcRenderer.invoke('dj:build-guest-qr', payload),
   connect: (payload) => ipcRenderer.invoke('dj:connect', payload),
   disconnect: () => ipcRenderer.invoke('dj:disconnect'),
+  markPlayed: (payload) => ipcRenderer.invoke('dj:mark-played', payload),
+  markQueued: (payload) => ipcRenderer.invoke('dj:mark-queued', payload),
   onEvent: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('dj:event', listener);

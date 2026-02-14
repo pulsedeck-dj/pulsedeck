@@ -109,6 +109,26 @@ async function main() {
   if (!Array.isArray(list) || !list.length) throw new Error('Request list is empty');
   if (!list.find((entry) => entry.id === submit.id)) throw new Error('Submitted request not found in DJ list');
 
+  const played = await request(`/api/parties/${code}/requests/${submit.id}/played`, {
+    method: 'POST',
+    headers: {
+      'X-DJ-Session-ID': claim.sessionId,
+      'X-DJ-Token': claim.token
+    }
+  });
+
+  if (played?.status !== 'played') throw new Error('Mark played failed');
+
+  const queued = await request(`/api/parties/${code}/requests/${submit.id}/queued`, {
+    method: 'POST',
+    headers: {
+      'X-DJ-Session-ID': claim.sessionId,
+      'X-DJ-Token': claim.token
+    }
+  });
+
+  if (queued?.status !== 'queued') throw new Error('Mark queued failed');
+
   console.log(`Smoke test passed for party ${code}`);
 }
 

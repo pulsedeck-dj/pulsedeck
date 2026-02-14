@@ -412,6 +412,32 @@ input:focus {
   color: #5b6376;
 }
 
+.recent-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.recent-item {
+  border: 1px solid #ddd6c2;
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  display: grid;
+  gap: 3px;
+}
+
+.recent-item strong {
+  font-size: 0.92rem;
+}
+
+.recent-item span {
+  font-size: 0.78rem;
+  color: #5b6376;
+}
+
 .share-mini {
   margin-top: 12px;
   border: 1px dashed #cfbfa6;

@@ -170,6 +170,17 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
     }
   }
 
+  const statusRaw = String(request?.status || 'queued').trim().toLowerCase();
+  const status = statusRaw === 'played' ? 'played' : 'queued';
+
+  let playedAt = null;
+  if (request?.playedAt) {
+    const date = new Date(request.playedAt);
+    if (!Number.isNaN(date.getTime())) {
+      playedAt = date.toISOString();
+    }
+  }
+
   return {
     id,
     seqNo,
@@ -178,6 +189,9 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
     artist: sanitizeText(request?.artist, 120) || 'Unknown',
     service: sanitizeText(request?.service, 30) || 'Unknown',
     appleMusicUrl: sanitizeText(request?.appleMusicUrl, 500),
+    status,
+    playedAt,
+    playedBy: sanitizeText(request?.playedBy, 80),
     createdAt
   };
 }
@@ -210,11 +224,11 @@ function emitQueueReplace(connection, requestsInput) {
   return list;
 }
 
-function emitQueueAdd(connection, requestInput, source = 'realtime') {
+function emitQueueUpsert(connection, requestInput, source = 'realtime', options = {}) {
   const request = sanitizeQueueRequest(requestInput, connection.partyCode);
   if (!request) return null;
-  if (connection.requestIds.has(request.id)) return null;
 
+  const isNew = !connection.requestIds.has(request.id);
   connection.requestIds.add(request.id);
 
   emit({
@@ -224,8 +238,17 @@ function emitQueueAdd(connection, requestInput, source = 'realtime') {
     at: new Date().toISOString()
   });
 
-  log('success', `Queued #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
-  return request;
+  if (options.announce) {
+    if (isNew && request.status === 'queued') {
+      log('success', `Queued #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
+    } else if (!isNew && request.status === 'played') {
+      log('info', `Marked played #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
+    } else if (!isNew && request.status === 'queued') {
+      log('info', `Returned to queue #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
+    }
+  }
+
+  return { request, isNew };
 }
 
 async function syncQueue(connection) {
@@ -351,7 +374,11 @@ async function connectDj(configInput) {
     });
 
     socket.on('request:new', (request) => {
-      emitQueueAdd(connection, request, 'realtime');
+      emitQueueUpsert(connection, request, 'realtime', { announce: true });
+    });
+
+    socket.on('request:update', (request) => {
+      emitQueueUpsert(connection, request, 'update', { announce: true });
     });
 
     socket.on('disconnect', () => {
@@ -389,6 +416,35 @@ async function connectDj(configInput) {
   }
 }
 
+async function updateRequestStatus(requestIdInput, nextStatus) {
+  if (!liveConnection) {
+    throw new Error('Not connected. Connect to a party first.');
+  }
+
+  const requestId = sanitizeText(requestIdInput, 128);
+  if (!requestId) {
+    throw new Error('Request ID is missing.');
+  }
+
+  const status = nextStatus === 'played' ? 'played' : 'queued';
+
+  const response = await axios.post(
+    `${liveConnection.apiBase}/api/parties/${liveConnection.partyCode}/requests/${requestId}/${status}`,
+    {},
+    {
+      headers: {
+        'X-DJ-Session-ID': liveConnection.sessionId,
+        'X-DJ-Token': liveConnection.token
+      },
+      timeout: 9000
+    }
+  );
+
+  const payload = response.data || {};
+  emitQueueUpsert(liveConnection, payload, 'action', { announce: true });
+  return payload;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -412,6 +468,8 @@ app.whenReady().then(() => {
   ipcMain.handle('dj:build-guest-qr', async (_event, payload) => buildGuestQr(payload));
   ipcMain.handle('dj:connect', async (_event, payload) => connectDj(payload));
   ipcMain.handle('dj:disconnect', async () => disconnectDj('Disconnected by user'));
+  ipcMain.handle('dj:mark-played', async (_event, payload) => updateRequestStatus(payload?.requestId, 'played'));
+  ipcMain.handle('dj:mark-queued', async (_event, payload) => updateRequestStatus(payload?.requestId, 'queued'));
 
   createWindow();
 

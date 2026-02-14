@@ -30,6 +30,10 @@
           Requests
           <span id="requestCountTab" class="tab-count">0</span>
         </button>
+        <button id="tabPlayedBtn" class="window-tab" type="button">
+          Played
+          <span id="playedCountTab" class="tab-count">0</span>
+        </button>
         <button id="tabShareBtn" class="window-tab" type="button">Share</button>
       </nav>
 
@@ -108,6 +112,26 @@
             <div id="logList" class="log-list"></div>
           </article>
         </section>
+      </section>
+
+      <section id="playedWindow" class="window-panel hidden">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Played Requests</h2>
+            <span id="playedCount" class="count-pill">0</span>
+          </div>
+          <div class="queue-toolbar">
+            <input
+              id="playedFilter"
+              type="text"
+              autocomplete="off"
+              placeholder="Filter played songs..."
+              aria-label="Filter played songs"
+            />
+          </div>
+          <div id="playedList" class="requests-list"></div>
+          <p class="hint">Mark a request as played in Requests to move it here.</p>
+        </article>
       </section>
 
       <section id="shareWindow" class="window-panel hidden">

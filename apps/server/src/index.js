@@ -16,6 +16,8 @@ import {
   getPartyState,
   getRequestsForDj,
   heartbeatSession,
+  markRequestPlayed,
+  markRequestQueued,
   normalizePartyCode,
   validateDjSocketRegistration
 } from './services/partyService.js';
@@ -132,6 +134,10 @@ function mapPartyError(res, error) {
       return res.status(400).json({ error: 'Unsupported music service' });
     case 'invalid_song_url':
       return res.status(400).json({ error: 'Invalid song URL' });
+    case 'invalid_request_id':
+      return res.status(400).json({ error: 'Invalid request ID' });
+    case 'request_not_found':
+      return res.status(404).json({ error: 'Request not found' });
     case 'party_request_limit_reached':
       return res.status(429).json({ error: 'Party request limit reached' });
     case 'request_retry_exhausted':
@@ -432,6 +438,48 @@ app.get(
     }
 
     res.json(result.requests);
+  })
+);
+
+app.post(
+  '/api/parties/:code/requests/:id/played',
+  asyncHandler(async (req, res) => {
+    const code = readCode(req, res);
+    if (!code) return;
+
+    const requestId = String(req.params.id || '').trim();
+    const sessionId = String(req.headers['x-dj-session-id'] || '').trim();
+    const token = String(req.headers['x-dj-token'] || '').trim();
+
+    const result = await markRequestPlayed(code, requestId, sessionId, token);
+    if (result.error) {
+      mapPartyError(res, result.error);
+      return;
+    }
+
+    io.to(`party:${code}:dj`).emit('request:update', result.request);
+    res.json(result.request);
+  })
+);
+
+app.post(
+  '/api/parties/:code/requests/:id/queued',
+  asyncHandler(async (req, res) => {
+    const code = readCode(req, res);
+    if (!code) return;
+
+    const requestId = String(req.params.id || '').trim();
+    const sessionId = String(req.headers['x-dj-session-id'] || '').trim();
+    const token = String(req.headers['x-dj-token'] || '').trim();
+
+    const result = await markRequestQueued(code, requestId, sessionId, token);
+    if (result.error) {
+      mapPartyError(res, result.error);
+      return;
+    }
+
+    io.to(`party:${code}:dj`).emit('request:update', result.request);
+    res.json(result.request);
   })
 );
 

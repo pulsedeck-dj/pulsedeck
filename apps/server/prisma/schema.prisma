@@ -56,11 +56,15 @@ model SongRequest {
   artist         String
   service        String
   appleMusicUrl  String?
+  status         String           @default("queued")
+  playedAt       DateTime?
+  playedBy       String?
   createdAt      DateTime         @default(now())
   idempotencyKeys IdempotencyKey[]
 
   @@unique([partyId, seqNo])
   @@index([partyId, createdAt])
+  @@index([partyId, status, seqNo])
 }
 
 model IdempotencyKey {

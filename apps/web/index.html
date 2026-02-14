@@ -60,6 +60,7 @@
             <button type="submit" class="btn btn-secondary">Join Party</button>
           </form>
           <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for code.</p>
+          <button id="stopCheckingBtn" class="btn btn-ghost btn-mini hidden" type="button">Stop Checking</button>
         </article>
 
         <article class="panel" id="guestSummaryPanel">
@@ -78,6 +79,7 @@
             </div>
           </div>
           <p id="guestLastRequestOut" class="micro-note">No requests sent yet.</p>
+          <ul id="guestRecentRequests" class="recent-list" aria-label="Recent requests"></ul>
         </article>
 
         <article class="panel hidden" id="requestSection">

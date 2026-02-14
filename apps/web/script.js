@@ -83,6 +83,7 @@ const openGuestWindowBtn = document.getElementById('openGuestWindowBtn');
 const joinForm = document.getElementById('joinForm');
 const partyCodeInput = document.getElementById('partyCode');
 const joinResult = document.getElementById('joinResult');
+const stopCheckingBtn = document.getElementById('stopCheckingBtn');
 
 const requestSection = document.getElementById('requestSection');
 const requestForm = document.getElementById('requestForm');
@@ -97,6 +98,7 @@ const appleSearchResults = document.getElementById('appleSearchResults');
 const guestPartyCodeOut = document.getElementById('guestPartyCodeOut');
 const guestRequestCountOut = document.getElementById('guestRequestCountOut');
 const guestLastRequestOut = document.getElementById('guestLastRequestOut');
+const guestRecentRequestsList = document.getElementById('guestRecentRequests');
 
 const apiBaseConfigForm = document.getElementById('apiBaseConfigForm');
 const apiBaseConfigInput = document.getElementById('apiBaseConfig');
@@ -127,6 +129,13 @@ let guestLastRequest = '';
 let joinDebounceTimer = null;
 let joinInFlight = false;
 let lastAutoJoinCode = '';
+let joinPollTimer = null;
+let joinPollCode = '';
+let joinPollInFlight = false;
+let joinPollAttempts = 0;
+
+let guestRecentRequests = [];
+const GUEST_RECENT_MAX = 5;
 
 function normalizePartyCode(value) {
   return String(value || '')
@@ -204,6 +213,10 @@ function setWindow(windowName) {
     tab.classList.toggle('is-active', isMatch);
     tab.setAttribute('aria-selected', isMatch ? 'true' : 'false');
   }
+
+  if (windowName !== 'guest') {
+    stopJoinPolling();
+  }
 }
 
 function updateEffectiveApiBaseLabel() {
@@ -214,6 +227,87 @@ function updateGuestSummary() {
   guestPartyCodeOut.textContent = activePartyCode || '------';
   guestRequestCountOut.textContent = String(guestRequestCount);
   guestLastRequestOut.textContent = guestLastRequest || 'No requests sent yet.';
+  renderGuestRecentRequests();
+}
+
+function guestRecentStorageKey(code) {
+  const normalized = normalizePartyCode(code);
+  if (!PARTY_CODE_PATTERN.test(normalized)) return '';
+  return `pulse_guest_recent_requests_${normalized}`;
+}
+
+function sanitizeGuestRecentEntry(entry) {
+  const title = String(entry?.title || '')
+    .trim()
+    .slice(0, 120);
+  const artist = String(entry?.artist || '')
+    .trim()
+    .slice(0, 120);
+  const service = String(entry?.service || '')
+    .trim()
+    .slice(0, 30);
+  const seqNo = Number.isFinite(Number(entry?.seqNo)) ? Number(entry.seqNo) : 0;
+
+  if (!title || !artist) return null;
+
+  const createdAt = String(entry?.createdAt || new Date().toISOString());
+  const created = new Date(createdAt);
+
+  return {
+    title,
+    artist,
+    service: service || 'Unknown',
+    seqNo: seqNo > 0 ? Math.floor(seqNo) : 0,
+    createdAt: Number.isNaN(created.getTime()) ? new Date().toISOString() : created.toISOString()
+  };
+}
+
+function loadGuestRecentRequests(code) {
+  const key = guestRecentStorageKey(code);
+  if (!key) return [];
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const list = Array.isArray(parsed) ? parsed : [];
+    return list.map(sanitizeGuestRecentEntry).filter(Boolean).slice(0, GUEST_RECENT_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function saveGuestRecentRequests(code) {
+  const key = guestRecentStorageKey(code);
+  if (!key) return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(guestRecentRequests.slice(0, GUEST_RECENT_MAX)));
+  } catch {
+    // ignore
+  }
+}
+
+function renderGuestRecentRequests() {
+  guestRecentRequestsList.textContent = '';
+
+  if (!guestRecentRequests.length) return;
+
+  for (const entry of guestRecentRequests) {
+    const li = document.createElement('li');
+    li.className = 'recent-item';
+
+    const title = document.createElement('strong');
+    title.textContent = `${entry.title} - ${entry.artist}`;
+
+    const sub = document.createElement('span');
+    const seq = entry.seqNo > 0 ? `#${entry.seqNo}` : '';
+    const time = nowLabel(entry.createdAt);
+    sub.textContent = `${seq}${seq ? ' • ' : ''}${entry.service} • ${time}`;
+
+    li.append(title, sub);
+    guestRecentRequestsList.appendChild(li);
+  }
 }
 
 function updateSystemStatus() {
@@ -645,6 +739,14 @@ async function submitSongRequest(input, options = {}) {
 
     guestRequestCount += 1;
     guestLastRequest = `Last request: ${data.title} - ${data.artist}`;
+
+    const recentEntry = sanitizeGuestRecentEntry(data);
+    if (recentEntry) {
+      guestRecentRequests.unshift(recentEntry);
+      guestRecentRequests = guestRecentRequests.slice(0, GUEST_RECENT_MAX);
+      saveGuestRecentRequests(activePartyCode);
+    }
+
     updateGuestSummary();
 
     pushTimeline('success', `Guest submitted #${data.seqNo}: ${data.title} - ${data.artist}`);
@@ -766,11 +868,88 @@ async function runAppleMusicSearch() {
   }
 }
 
+function stopJoinPolling(message) {
+  if (joinPollTimer) {
+    clearInterval(joinPollTimer);
+  }
+
+  joinPollTimer = null;
+  joinPollCode = '';
+  joinPollInFlight = false;
+  joinPollAttempts = 0;
+
+  stopCheckingBtn.classList.add('hidden');
+
+  if (message) {
+    setStatus(joinResult, message, 'neutral');
+  }
+}
+
+function startJoinPolling(codeInput) {
+  const code = normalizePartyCode(codeInput);
+  if (!apiBase) return;
+  if (!PARTY_CODE_PATTERN.test(code)) return;
+
+  if (joinPollTimer && joinPollCode === code) return;
+
+  stopJoinPolling();
+  joinPollCode = code;
+  joinPollAttempts = 0;
+  stopCheckingBtn.classList.remove('hidden');
+  stopCheckingBtn.textContent = 'Stop Checking';
+
+  const maxAttempts = 45;
+  const intervalMs = 2600;
+
+  joinPollTimer = setInterval(async () => {
+    if (joinPollInFlight) return;
+
+    joinPollInFlight = true;
+    joinPollAttempts += 1;
+
+    try {
+      const data = await apiRequest(`/api/parties/${code}/join`, { method: 'POST', timeoutMs: 8000 });
+
+      if (data.djActive) {
+        stopJoinPolling();
+
+        activePartyCode = code;
+        guestRecentRequests = loadGuestRecentRequests(code);
+        guestRequestCount = guestRecentRequests.length;
+        guestLastRequest = guestRecentRequests.length
+          ? `Last request: ${guestRecentRequests[0].title} - ${guestRecentRequests[0].artist}`
+          : '';
+
+        revealPanel(requestSection);
+        setStatus(joinResult, `DJ is live. Connected to party ${code}.`, 'success');
+        pushTimeline('success', `Guest joined party ${code}.`);
+        updateGuestSummary();
+        updateSystemStatus();
+        return;
+      }
+
+      if (joinPollAttempts >= maxAttempts) {
+        stopJoinPolling('Still waiting for DJ. Tap Join to retry.');
+        return;
+      }
+
+      setStatus(joinResult, `Waiting for DJ to connect... (${joinPollAttempts}/${maxAttempts})`, 'info');
+    } catch (error) {
+      stopJoinPolling(error.message || 'Could not check DJ status. Tap Join to retry.');
+    } finally {
+      joinPollInFlight = false;
+    }
+  }, intervalMs);
+}
+
 async function joinPartyByCode(code) {
   if (!PARTY_CODE_PATTERN.test(code)) {
     setStatus(joinResult, 'Party code must be exactly 6 letters/numbers.', 'error');
     hidePanel(requestSection);
     activePartyCode = null;
+    guestRequestCount = 0;
+    guestLastRequest = '';
+    guestRecentRequests = [];
     updateGuestSummary();
     updateSystemStatus();
     return false;
@@ -783,14 +962,24 @@ async function joinPartyByCode(code) {
 
     if (!data.djActive) {
       activePartyCode = null;
+      guestRequestCount = 0;
+      guestLastRequest = '';
+      guestRecentRequests = [];
       hidePanel(requestSection);
-      setStatus(joinResult, 'Party found, but DJ is not active yet. Ask DJ to open the DJ app.', 'info');
+      setStatus(joinResult, 'Party found. Waiting for DJ to connect...', 'info');
+      startJoinPolling(code);
       updateGuestSummary();
       updateSystemStatus();
       return false;
     }
 
+    stopJoinPolling();
     activePartyCode = code;
+    guestRecentRequests = loadGuestRecentRequests(code);
+    guestRequestCount = guestRecentRequests.length;
+    guestLastRequest = guestRecentRequests.length
+      ? `Last request: ${guestRecentRequests[0].title} - ${guestRecentRequests[0].artist}`
+      : '';
     revealPanel(requestSection);
     setStatus(joinResult, `Connected to party ${code}. You can send requests now.`, 'success');
     pushTimeline('success', `Guest joined party ${code}.`);
@@ -799,7 +988,11 @@ async function joinPartyByCode(code) {
     return true;
   } catch (error) {
     activePartyCode = null;
+    guestRequestCount = 0;
+    guestLastRequest = '';
+    guestRecentRequests = [];
     hidePanel(requestSection);
+    stopJoinPolling();
     setStatus(joinResult, error.message || 'Unable to join party.', 'error');
     updateGuestSummary();
     updateSystemStatus();
@@ -845,6 +1038,10 @@ openSetupBtn.addEventListener('click', () => {
 setupBackBtn.addEventListener('click', () => {
   setWindow('guest');
   partyCodeInput.focus();
+});
+
+stopCheckingBtn.addEventListener('click', () => {
+  stopJoinPolling('Stopped checking. Tap Join to retry.');
 });
 
 apiBaseConfigForm.addEventListener('submit', async (event) => {
@@ -900,9 +1097,11 @@ clearApiBaseBtn.addEventListener('click', () => {
   setAuthToken('');
   setAuthUi();
   hidePanel(requestSection);
+  stopJoinPolling();
   activePartyCode = null;
   guestRequestCount = 0;
   guestLastRequest = '';
+  guestRecentRequests = [];
   updateGuestSummary();
   updateSystemStatus();
   setStatus(apiBaseConfigStatus, 'API base cleared.', 'neutral');
@@ -913,7 +1112,21 @@ clearApiBaseBtn.addEventListener('click', () => {
 
 partyCodeInput.addEventListener('input', () => {
   partyCodeInput.value = normalizePartyCode(partyCodeInput.value);
-  scheduleAutoJoin(partyCodeInput.value);
+  stopJoinPolling();
+
+  const normalized = normalizePartyCode(partyCodeInput.value);
+  if (activePartyCode && normalized !== activePartyCode) {
+    activePartyCode = null;
+    guestRequestCount = 0;
+    guestLastRequest = '';
+    guestRecentRequests = [];
+    hidePanel(requestSection);
+    setStatus(joinResult, 'Party code changed. Tap Join to connect.', 'neutral');
+    updateGuestSummary();
+    updateSystemStatus();
+  }
+
+  scheduleAutoJoin(normalized);
 });
 
 registerBtn.addEventListener('click', () => {
@@ -941,7 +1154,11 @@ logoutBtn.addEventListener('click', () => {
   setAuthUi();
   setStatus(joinResult, 'Waiting for code.', 'neutral');
   hidePanel(requestSection);
+  stopJoinPolling();
   activePartyCode = null;
+  guestRequestCount = 0;
+  guestLastRequest = '';
+  guestRecentRequests = [];
   updateGuestSummary();
   updateSystemStatus();
   pushTimeline('info', 'DJ signed out.');

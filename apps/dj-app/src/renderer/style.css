@@ -106,7 +106,7 @@ h1 {
 
 .window-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -276,6 +276,10 @@ input:focus {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
   transition: transform 0.15s ease, filter 0.15s ease, opacity 0.15s ease;
 }
 
@@ -312,6 +316,11 @@ input:focus {
 .btn-accent {
   color: #fff;
   background: linear-gradient(95deg, #8f46ff, #d643f8);
+}
+
+.btn-success {
+  color: #fff;
+  background: linear-gradient(95deg, #18a35d, #6edc8b);
 }
 
 .btn-mini {
@@ -433,6 +442,23 @@ input:focus {
 
 .request-link:hover {
   color: #084992;
+}
+
+.request-actions {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.request-actions .btn,
+.request-actions .btn-link {
+  width: 100%;
+}
+
+.request-item.is-played {
+  border-left-color: #77c596;
+  background: #f5fff8;
 }
 
 .log-msg {
@@ -647,6 +673,10 @@ input:focus {
   .button-row,
   .button-row-tools,
   .window-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .request-actions {
     grid-template-columns: 1fr;
   }
 

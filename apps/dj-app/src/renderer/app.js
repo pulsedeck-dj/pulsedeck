@@ -16,10 +16,12 @@ const clearLogBtn = document.getElementById('clearLogBtn');
 
 const tabBoothBtn = document.getElementById('tabBoothBtn');
 const tabRequestsBtn = document.getElementById('tabRequestsBtn');
+const tabPlayedBtn = document.getElementById('tabPlayedBtn');
 const tabShareBtn = document.getElementById('tabShareBtn');
 
 const boothWindow = document.getElementById('boothWindow');
 const requestsWindow = document.getElementById('requestsWindow');
+const playedWindow = document.getElementById('playedWindow');
 const shareWindow = document.getElementById('shareWindow');
 
 const statusPill = document.getElementById('statusPill');
@@ -29,6 +31,10 @@ const queueOrderBtn = document.getElementById('queueOrderBtn');
 const queueFilterInput = document.getElementById('queueFilter');
 const requestCount = document.getElementById('requestCount');
 const requestCountTab = document.getElementById('requestCountTab');
+const playedList = document.getElementById('playedList');
+const playedFilterInput = document.getElementById('playedFilter');
+const playedCount = document.getElementById('playedCount');
+const playedCountTab = document.getElementById('playedCountTab');
 const logList = document.getElementById('logList');
 
 const sharePartyCode = document.getElementById('sharePartyCode');
@@ -72,18 +78,22 @@ function setWindow(windowName) {
 
   const isBooth = windowName === 'booth';
   const isRequests = windowName === 'requests';
+  const isPlayed = windowName === 'played';
   const isShare = windowName === 'share';
 
   boothWindow.classList.toggle('hidden', !isBooth);
   requestsWindow.classList.toggle('hidden', !isRequests);
+  playedWindow.classList.toggle('hidden', !isPlayed);
   shareWindow.classList.toggle('hidden', !isShare);
 
   boothWindow.classList.toggle('is-active', isBooth);
   requestsWindow.classList.toggle('is-active', isRequests);
+  playedWindow.classList.toggle('is-active', isPlayed);
   shareWindow.classList.toggle('is-active', isShare);
 
   tabBoothBtn.classList.toggle('is-active', isBooth);
   tabRequestsBtn.classList.toggle('is-active', isRequests);
+  tabPlayedBtn.classList.toggle('is-active', isPlayed);
   tabShareBtn.classList.toggle('is-active', isShare);
 
   if (isRequests) {
@@ -160,6 +170,7 @@ function setQueueOrder(nextOrder) {
   updateQueueOrderUi();
   sortQueue(queueItems);
   renderRequestList();
+  renderPlayedList();
 }
 
 function sanitizeQueueEntry(entry) {
@@ -167,6 +178,8 @@ function sanitizeQueueEntry(entry) {
   if (!id) return null;
 
   const seqNo = Number.isFinite(Number(entry?.seqNo)) ? Number(entry.seqNo) : 0;
+  const statusRaw = String(entry?.status || 'queued').trim().toLowerCase();
+  const status = statusRaw === 'played' ? 'played' : 'queued';
 
   return {
     id,
@@ -175,6 +188,9 @@ function sanitizeQueueEntry(entry) {
     artist: String(entry?.artist || 'Unknown').trim() || 'Unknown',
     service: String(entry?.service || 'Unknown').trim() || 'Unknown',
     appleMusicUrl: String(entry?.appleMusicUrl || '').trim(),
+    status,
+    playedAt: entry?.playedAt ? String(entry.playedAt) : '',
+    playedBy: String(entry?.playedBy || '').trim(),
     createdAt: String(entry?.createdAt || new Date().toISOString())
   };
 }
@@ -195,9 +211,13 @@ function sortQueue(items) {
 }
 
 function updateQueueCounters() {
-  const count = queueItems.length;
-  requestCount.textContent = String(count);
-  requestCountTab.textContent = String(count);
+  const queued = queueItems.filter((entry) => entry.status !== 'played').length;
+  const played = queueItems.filter((entry) => entry.status === 'played').length;
+
+  requestCount.textContent = String(queued);
+  requestCountTab.textContent = String(queued);
+  playedCount.textContent = String(played);
+  playedCountTab.textContent = String(played);
 }
 
 function setQueue(itemsInput) {
@@ -212,6 +232,7 @@ function setQueue(itemsInput) {
   queueItems = Array.from(map.values());
   sortQueue(queueItems);
   renderRequestList();
+  renderPlayedList();
 }
 
 function addQueueItem(itemInput) {
@@ -227,8 +248,9 @@ function addQueueItem(itemInput) {
 
   sortQueue(queueItems);
   renderRequestList();
+  renderPlayedList();
 
-  if (activeWindow !== 'requests') {
+  if (activeWindow !== 'requests' && existing < 0 && item.status === 'queued') {
     tabRequestsBtn.classList.add('has-alert');
   }
 }
@@ -236,7 +258,48 @@ function addQueueItem(itemInput) {
 function clearQueue() {
   queueItems = [];
   renderRequestList();
+  renderPlayedList();
   tabRequestsBtn.classList.remove('has-alert');
+}
+
+function setButtonBusy(button, busy, busyLabel, idleLabel) {
+  if (!button) return;
+  button.disabled = busy;
+  if (busyLabel && idleLabel) {
+    button.textContent = busy ? busyLabel : idleLabel;
+  }
+}
+
+async function copySongSummary(entry) {
+  const text = `${entry.title} - ${entry.artist}`;
+  const ok = await copyToClipboard(text);
+  if (ok) {
+    appendLog('success', 'Copied song title + artist.', new Date().toISOString());
+  } else {
+    appendLog('error', 'Could not copy song info.', new Date().toISOString());
+  }
+}
+
+async function markRequestPlayed(requestId, button) {
+  setButtonBusy(button, true, 'Marking...', 'Mark Played');
+  try {
+    await window.djApi.markPlayed({ requestId });
+  } catch (error) {
+    appendLog('error', error.message || 'Failed to mark request as played.', new Date().toISOString());
+  } finally {
+    setButtonBusy(button, false, 'Marking...', 'Mark Played');
+  }
+}
+
+async function markRequestQueued(requestId, button) {
+  setButtonBusy(button, true, 'Undoing...', 'Undo');
+  try {
+    await window.djApi.markQueued({ requestId });
+  } catch (error) {
+    appendLog('error', error.message || 'Failed to return request to queue.', new Date().toISOString());
+  } finally {
+    setButtonBusy(button, false, 'Undoing...', 'Undo');
+  }
 }
 
 function renderRequestList() {
@@ -246,14 +309,15 @@ function renderRequestList() {
   const filterTerm = String(queueFilterInput?.value || '')
     .trim()
     .toLowerCase();
+  const queuedItems = queueItems.filter((entry) => entry.status !== 'played');
   const visibleItems = filterTerm
-    ? queueItems.filter((entry) => {
+    ? queuedItems.filter((entry) => {
         const hay = `${entry.title} ${entry.artist} ${entry.service}`.toLowerCase();
         return hay.includes(filterTerm);
       })
-    : queueItems;
+    : queuedItems;
 
-  if (!queueItems.length) {
+  if (!queuedItems.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
     empty.textContent = 'No requests yet. Share QR and wait for guests to submit songs.';
@@ -264,7 +328,7 @@ function renderRequestList() {
   if (filterTerm) {
     const note = document.createElement('p');
     note.className = 'filter-note';
-    note.textContent = `Showing ${visibleItems.length} of ${queueItems.length} requests.`;
+    note.textContent = `Showing ${visibleItems.length} of ${queuedItems.length} queued requests.`;
     requestsList.appendChild(note);
 
     if (!visibleItems.length) {
@@ -305,19 +369,145 @@ function renderRequestList() {
     meta.className = 'request-sub';
     meta.textContent = `Queued ${nowLabel(entry.createdAt)}`;
 
-    item.append(top, title, artist, meta);
+    const actions = document.createElement('div');
+    actions.className = 'request-actions';
+
+    const playedButton = document.createElement('button');
+    playedButton.type = 'button';
+    playedButton.className = 'btn btn-success btn-mini';
+    playedButton.textContent = 'Mark Played';
+    playedButton.addEventListener('click', () => markRequestPlayed(entry.id, playedButton));
 
     if (entry.appleMusicUrl) {
-      const link = document.createElement('a');
-      link.className = 'request-link';
-      link.href = entry.appleMusicUrl;
-      link.target = '_blank';
-      link.rel = 'noreferrer noopener';
-      link.textContent = 'Open Song Link';
-      item.appendChild(link);
+      const open = document.createElement('a');
+      open.className = 'btn btn-ghost btn-mini';
+      open.href = entry.appleMusicUrl;
+      open.target = '_blank';
+      open.rel = 'noreferrer noopener';
+      open.textContent = 'Open Link';
+      actions.append(playedButton, open);
+    } else {
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'btn btn-ghost btn-mini';
+      copy.textContent = 'Copy';
+      copy.addEventListener('click', () => copySongSummary(entry));
+      actions.append(playedButton, copy);
     }
 
+    item.append(top, title, artist, meta, actions);
+
     requestsList.appendChild(item);
+  }
+}
+
+function renderPlayedList() {
+  playedList.textContent = '';
+  updateQueueCounters();
+
+  const filterTerm = String(playedFilterInput?.value || '')
+    .trim()
+    .toLowerCase();
+
+  const playedItems = queueItems
+    .filter((entry) => entry.status === 'played')
+    .slice()
+    .sort((a, b) => {
+      const aTime = new Date(a.playedAt || a.createdAt).getTime();
+      const bTime = new Date(b.playedAt || b.createdAt).getTime();
+      return bTime - aTime;
+    });
+
+  const visibleItems = filterTerm
+    ? playedItems.filter((entry) => {
+        const hay = `${entry.title} ${entry.artist} ${entry.service}`.toLowerCase();
+        return hay.includes(filterTerm);
+      })
+    : playedItems;
+
+  if (!playedItems.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'No played requests yet.';
+    playedList.appendChild(empty);
+    return;
+  }
+
+  if (filterTerm) {
+    const note = document.createElement('p');
+    note.className = 'filter-note';
+    note.textContent = `Showing ${visibleItems.length} of ${playedItems.length} played requests.`;
+    playedList.appendChild(note);
+
+    if (!visibleItems.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty';
+      empty.textContent = `No matches for "${filterTerm}".`;
+      playedList.appendChild(empty);
+      return;
+    }
+  }
+
+  for (const entry of visibleItems) {
+    const item = document.createElement('article');
+    item.className = 'request-item is-played';
+
+    const top = document.createElement('div');
+    top.className = 'request-top';
+
+    const seq = document.createElement('span');
+    seq.className = 'request-seq';
+    seq.textContent = entry.seqNo > 0 ? `#${entry.seqNo}` : '#?';
+
+    const service = document.createElement('span');
+    service.className = 'request-service';
+    service.textContent = entry.service;
+
+    top.append(seq, service);
+
+    const title = document.createElement('p');
+    title.className = 'request-title';
+    title.textContent = entry.title;
+
+    const artist = document.createElement('p');
+    artist.className = 'request-artist';
+    artist.textContent = entry.artist;
+
+    const playedLabel = nowLabel(entry.playedAt || entry.createdAt);
+    const playedBy = entry.playedBy ? ` by ${entry.playedBy}` : '';
+
+    const meta = document.createElement('p');
+    meta.className = 'request-sub';
+    meta.textContent = `Played ${playedLabel}${playedBy}`;
+
+    const actions = document.createElement('div');
+    actions.className = 'request-actions';
+
+    const undoButton = document.createElement('button');
+    undoButton.type = 'button';
+    undoButton.className = 'btn btn-ghost btn-mini';
+    undoButton.textContent = 'Undo';
+    undoButton.addEventListener('click', () => markRequestQueued(entry.id, undoButton));
+
+    if (entry.appleMusicUrl) {
+      const open = document.createElement('a');
+      open.className = 'btn btn-ghost btn-mini';
+      open.href = entry.appleMusicUrl;
+      open.target = '_blank';
+      open.rel = 'noreferrer noopener';
+      open.textContent = 'Open Link';
+      actions.append(undoButton, open);
+    } else {
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'btn btn-ghost btn-mini';
+      copy.textContent = 'Copy';
+      copy.addEventListener('click', () => copySongSummary(entry));
+      actions.append(undoButton, copy);
+    }
+
+    item.append(top, title, artist, meta, actions);
+    playedList.appendChild(item);
   }
 }
 
@@ -507,6 +697,10 @@ tabRequestsBtn.addEventListener('click', () => {
   setWindow('requests');
 });
 
+tabPlayedBtn.addEventListener('click', () => {
+  setWindow('played');
+});
+
 tabShareBtn.addEventListener('click', () => {
   setWindow('share');
 });
@@ -518,6 +712,10 @@ queueOrderBtn.addEventListener('click', () => {
 
 queueFilterInput.addEventListener('input', () => {
   renderRequestList();
+});
+
+playedFilterInput.addEventListener('input', () => {
+  renderPlayedList();
 });
 
 jumpRequestsBtn.addEventListener('click', () => {
