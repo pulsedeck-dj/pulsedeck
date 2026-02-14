@@ -60,7 +60,8 @@ body {
 }
 
 .hero,
-.panel {
+.panel,
+.window-tabs {
   animation: enterUp 0.45s ease both;
 }
 
@@ -95,6 +96,67 @@ h1 {
 .subtitle {
   margin: 0;
   color: var(--muted);
+}
+
+.status-text {
+  margin: 10px 0 0;
+  font-size: 0.92rem;
+  color: #374055;
+}
+
+.window-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.window-tab {
+  border: 1px solid #d7c7af;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #2a3040;
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.window-tab:hover {
+  transform: translateY(-1px);
+}
+
+.window-tab.is-active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(95deg, #0d6efd, #00bbf8);
+}
+
+.window-tab.has-alert {
+  box-shadow: 0 0 0 3px rgba(8, 187, 248, 0.22);
+}
+
+.tab-count {
+  min-width: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.9);
+  color: #1f2d46;
+  padding: 2px 7px;
+  font-size: 0.72rem;
+}
+
+.window-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.window-panel.hidden {
+  display: none;
 }
 
 .panel {
@@ -192,6 +254,11 @@ input:focus {
   gap: 8px;
 }
 
+.button-row-tools {
+  margin-top: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .btn {
   border: none;
   border-radius: 999px;
@@ -237,10 +304,15 @@ input:focus {
   background: linear-gradient(95deg, #8f46ff, #d643f8);
 }
 
-.status-text {
-  margin: 12px 0 0;
-  font-size: 0.92rem;
-  color: #374055;
+.btn-mini {
+  font-size: 0.78rem;
+  padding: 6px 10px;
+}
+
+.hint {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  color: #4d586f;
 }
 
 .grid-two {
@@ -251,7 +323,7 @@ input:focus {
 
 .requests-list,
 .log-list {
-  max-height: 390px;
+  max-height: 420px;
   overflow-y: auto;
   display: grid;
   gap: 9px;
@@ -486,7 +558,9 @@ input:focus {
 }
 
 @media (max-width: 760px) {
-  .button-row {
+  .button-row,
+  .button-row-tools,
+  .window-tabs {
     grid-template-columns: 1fr;
   }
 }

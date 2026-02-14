@@ -9,10 +9,21 @@ const connectBtn = document.getElementById('connectBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const showQrBtn = document.getElementById('showQrBtn');
 
+const copyPartyCodeBtn = document.getElementById('copyPartyCodeBtn');
+const copyGuestUrlBtn = document.getElementById('copyGuestUrlBtn');
+const jumpRequestsBtn = document.getElementById('jumpRequestsBtn');
+const clearLogBtn = document.getElementById('clearLogBtn');
+
+const tabBoothBtn = document.getElementById('tabBoothBtn');
+const tabRequestsBtn = document.getElementById('tabRequestsBtn');
+const boothWindow = document.getElementById('boothWindow');
+const requestsWindow = document.getElementById('requestsWindow');
+
 const statusPill = document.getElementById('statusPill');
 const statusText = document.getElementById('statusText');
 const requestsList = document.getElementById('requestsList');
 const requestCount = document.getElementById('requestCount');
+const requestCountTab = document.getElementById('requestCountTab');
 const logList = document.getElementById('logList');
 
 const qrModal = document.getElementById('qrModal');
@@ -23,6 +34,7 @@ const qrUrl = document.getElementById('qrUrl');
 
 let unsubscribe = null;
 let queueItems = [];
+let activeWindow = 'booth';
 
 function normalizePartyCode(value) {
   return String(value || '')
@@ -35,6 +47,21 @@ function normalizePartyCode(value) {
 function nowLabel(iso) {
   const date = iso ? new Date(iso) : new Date();
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function setWindow(windowName) {
+  activeWindow = windowName;
+
+  const isBooth = windowName === 'booth';
+  boothWindow.classList.toggle('hidden', !isBooth);
+  requestsWindow.classList.toggle('hidden', isBooth);
+
+  tabBoothBtn.classList.toggle('is-active', isBooth);
+  tabRequestsBtn.classList.toggle('is-active', !isBooth);
+
+  if (!isBooth) {
+    tabRequestsBtn.classList.remove('has-alert');
+  }
 }
 
 function setStatus(status, detail) {
@@ -101,6 +128,12 @@ function sortQueue(items) {
   });
 }
 
+function updateQueueCounters() {
+  const count = queueItems.length;
+  requestCount.textContent = String(count);
+  requestCountTab.textContent = String(count);
+}
+
 function setQueue(itemsInput) {
   const map = new Map();
 
@@ -128,16 +161,21 @@ function addQueueItem(itemInput) {
 
   sortQueue(queueItems);
   renderRequestList();
+
+  if (activeWindow !== 'requests') {
+    tabRequestsBtn.classList.add('has-alert');
+  }
 }
 
 function clearQueue() {
   queueItems = [];
   renderRequestList();
+  tabRequestsBtn.classList.remove('has-alert');
 }
 
 function renderRequestList() {
   requestsList.textContent = '';
-  requestCount.textContent = String(queueItems.length);
+  updateQueueCounters();
 
   if (!queueItems.length) {
     const empty = document.createElement('p');
@@ -220,6 +258,68 @@ function setQrVisible(visible) {
   }
 }
 
+async function copyToClipboard(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // fallback below
+  }
+
+  try {
+    const temp = document.createElement('textarea');
+    temp.value = value;
+    temp.setAttribute('readonly', 'true');
+    temp.style.position = 'fixed';
+    temp.style.opacity = '0';
+    document.body.appendChild(temp);
+    temp.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(temp);
+    return Boolean(ok);
+  } catch {
+    return false;
+  }
+}
+
+async function copyPartyCode() {
+  const partyCode = normalizePartyCode(partyCodeInput.value);
+  if (!partyCode) {
+    appendLog('warning', 'Enter a valid party code first.', new Date().toISOString());
+    return;
+  }
+
+  const ok = await copyToClipboard(partyCode);
+  if (ok) {
+    appendLog('success', `Party code ${partyCode} copied.`, new Date().toISOString());
+  } else {
+    appendLog('error', 'Could not copy party code.', new Date().toISOString());
+  }
+}
+
+async function copyGuestUrl() {
+  try {
+    const payload = await window.djApi.buildGuestQr({
+      partyCode: normalizePartyCode(partyCodeInput.value),
+      guestWebBase: String(guestWebBaseInput.value || '').trim()
+    });
+
+    const ok = await copyToClipboard(payload.url);
+    if (ok) {
+      appendLog('success', 'Guest URL copied to clipboard.', new Date().toISOString());
+    } else {
+      appendLog('error', 'Could not copy guest URL.', new Date().toISOString());
+    }
+  } catch (error) {
+    appendLog('error', error.message || 'Could not build guest URL.', new Date().toISOString());
+  }
+}
+
 async function initialize() {
   clearQueue();
   setStatus('idle', 'Loading settings...');
@@ -257,6 +357,18 @@ async function initialize() {
   });
 }
 
+tabBoothBtn.addEventListener('click', () => {
+  setWindow('booth');
+});
+
+tabRequestsBtn.addEventListener('click', () => {
+  setWindow('requests');
+});
+
+jumpRequestsBtn.addEventListener('click', () => {
+  setWindow('requests');
+});
+
 partyCodeInput.addEventListener('input', () => {
   partyCodeInput.value = normalizePartyCode(partyCodeInput.value);
 });
@@ -277,6 +389,7 @@ connectBtn.addEventListener('click', async () => {
     setStatus('connecting', 'Connecting to party...');
     const result = await window.djApi.connect(readFormConfig());
     appendLog('success', `DJ listener connected for ${result.partyCode}.`, new Date().toISOString());
+    setWindow('requests');
   } catch (error) {
     setStatus('error', error.message || 'Connection failed');
     appendLog('error', error.message || 'Connection failed.', new Date().toISOString());
@@ -312,6 +425,19 @@ showQrBtn.addEventListener('click', async () => {
   }
 });
 
+copyPartyCodeBtn.addEventListener('click', () => {
+  copyPartyCode();
+});
+
+copyGuestUrlBtn.addEventListener('click', () => {
+  copyGuestUrl();
+});
+
+clearLogBtn.addEventListener('click', () => {
+  logList.textContent = '';
+  appendLog('info', 'Activity log cleared.', new Date().toISOString());
+});
+
 qrCloseBtn.addEventListener('click', () => {
   setQrVisible(false);
 });
@@ -331,6 +457,8 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('beforeunload', () => {
   if (unsubscribe) unsubscribe();
 });
+
+setWindow('booth');
 
 initialize().catch((error) => {
   setStatus('error', error.message || 'Initialization failed');

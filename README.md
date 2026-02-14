@@ -17,6 +17,7 @@ PulseDeck is a full party request platform:
 - Realtime request delivery to DJ desktop app
 - Apple Music search endpoint for web picker
 - Idempotent request submission (`X-Idempotency-Key`)
+- Multi-window web UX (`Guest`, `DJ`, `Setup`) with runtime backend URL configuration
 - DJ queue dashboard with activity log and guest QR modal
 
 ## Requirements
@@ -111,6 +112,13 @@ In the DJ desktop app:
 - a full-screen party card opens with party code + QR
 
 The QR opens the web page with `partyCode` prefilled in URL.
+
+## Web Setup Window
+
+If your GitHub Pages build has no API base configured, open `Setup Window` in the web app and set:
+- `API Base URL` (your public server URL, for example Render)
+
+The web app stores this value in browser local storage and uses it for all API calls.
 
 ## Scripts
 From repo root:

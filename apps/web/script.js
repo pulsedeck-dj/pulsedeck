@@ -15,15 +15,50 @@ function detectDefaultApiBase() {
   return '';
 }
 
-const API_BASE =
-  trimApiBase(window.localStorage.getItem('pulse_api_base')) ||
-  trimApiBase(window.PULSE_CONFIG?.apiBase) ||
-  detectDefaultApiBase();
+function normalizeApiBaseCandidate(value) {
+  const candidate = trimApiBase(value);
+  if (!candidate) return '';
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    parsed.hash = '';
+    parsed.search = '';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function readInitialApiBase() {
+  const stored = normalizeApiBaseCandidate(window.localStorage.getItem('pulse_api_base'));
+  if (stored) return stored;
+
+  const fromConfig = normalizeApiBaseCandidate(window.PULSE_CONFIG?.apiBase);
+  if (fromConfig) {
+    window.localStorage.setItem('pulse_api_base', fromConfig);
+    return fromConfig;
+  }
+
+  return normalizeApiBaseCandidate(detectDefaultApiBase());
+}
+
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const AUTH_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'YouTube']);
 const AUTH_TOKEN_KEY = 'pulse_auth_token';
 const PASSWORD_MIN_LENGTH = 10;
+
+const tabGuest = document.getElementById('tabGuest');
+const tabDj = document.getElementById('tabDj');
+const tabSetup = document.getElementById('tabSetup');
+const openSetupBtn = document.getElementById('openSetupBtn');
+const windowPanels = Array.from(document.querySelectorAll('.window-panel'));
+const windowTabs = [tabGuest, tabDj, tabSetup];
+
+const guestWindow = document.getElementById('guestWindow');
+const djWindow = document.getElementById('djWindow');
+const setupWindow = document.getElementById('setupWindow');
 
 const authForm = document.getElementById('authForm');
 const authEmailInput = document.getElementById('authEmail');
@@ -40,6 +75,8 @@ const createResult = document.getElementById('createResult');
 const partyCodeOut = document.getElementById('partyCodeOut');
 const djKeyOut = document.getElementById('djKeyOut');
 const djSecrets = document.getElementById('djSecrets');
+const copyPartyCodeBtn = document.getElementById('copyPartyCodeBtn');
+const copyDjKeyBtn = document.getElementById('copyDjKeyBtn');
 
 const joinForm = document.getElementById('joinForm');
 const partyCodeInput = document.getElementById('partyCode');
@@ -55,6 +92,16 @@ const appleSearchBtn = document.getElementById('appleSearchBtn');
 const appleSearchStatus = document.getElementById('appleSearchStatus');
 const appleSearchResults = document.getElementById('appleSearchResults');
 
+const apiBaseConfigForm = document.getElementById('apiBaseConfigForm');
+const apiBaseConfigInput = document.getElementById('apiBaseConfig');
+const saveApiBaseBtn = document.getElementById('saveApiBaseBtn');
+const testApiBaseBtn = document.getElementById('testApiBaseBtn');
+const clearApiBaseBtn = document.getElementById('clearApiBaseBtn');
+const apiBaseConfigStatus = document.getElementById('apiBaseConfigStatus');
+const effectiveApiBase = document.getElementById('effectiveApiBase');
+
+let apiBase = readInitialApiBase();
+let activeWindow = 'guest';
 let activePartyCode = null;
 let authToken = window.localStorage.getItem(AUTH_TOKEN_KEY) || '';
 let authUser = null;
@@ -78,12 +125,6 @@ function setButtonLoading(button, loading, loadingLabel, idleLabel) {
   button.textContent = loading ? loadingLabel : idleLabel;
 }
 
-function readPartyCodeFromUrl() {
-  const params = new URLSearchParams(window.location.search || '');
-  const fromParam = params.get('partyCode') || params.get('code');
-  return normalizePartyCode(fromParam);
-}
-
 function setButtonsLoading(buttons, loading) {
   for (const button of buttons) {
     button.disabled = loading;
@@ -100,6 +141,40 @@ function revealPanel(panel) {
 function hidePanel(panel) {
   panel.classList.add('hidden');
   panel.classList.remove('panel-pop');
+}
+
+function setWindow(windowName) {
+  activeWindow = windowName;
+
+  for (const panel of windowPanels) {
+    const isMatch = panel.dataset.window === windowName;
+    panel.classList.toggle('hidden', !isMatch);
+    panel.classList.toggle('is-active', isMatch);
+  }
+
+  for (const tab of windowTabs) {
+    const isMatch = tab.dataset.window === windowName;
+    tab.classList.toggle('is-active', isMatch);
+    tab.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+  }
+}
+
+function updateEffectiveApiBaseLabel() {
+  effectiveApiBase.textContent = apiBase || 'Not configured';
+}
+
+function setApiBase(nextValue) {
+  apiBase = normalizeApiBaseCandidate(nextValue);
+
+  if (apiBase) {
+    window.localStorage.setItem('pulse_api_base', apiBase);
+  } else {
+    window.localStorage.removeItem('pulse_api_base');
+  }
+
+  apiBaseConfigInput.value = apiBase;
+  updateEffectiveApiBaseLabel();
+  setAuthUi();
 }
 
 function resetDjSecrets() {
@@ -139,6 +214,12 @@ function isValidSongUrl(urlText, service) {
   return true;
 }
 
+function readPartyCodeFromUrl() {
+  const params = new URLSearchParams(window.location.search || '');
+  const fromParam = params.get('partyCode') || params.get('code');
+  return normalizePartyCode(fromParam);
+}
+
 function setAuthToken(token) {
   authToken = token || '';
   if (authToken) {
@@ -150,7 +231,7 @@ function setAuthToken(token) {
 
 function setAuthUi() {
   const isSignedIn = Boolean(authUser && authToken);
-  const backendReady = Boolean(API_BASE);
+  const backendReady = Boolean(apiBase);
   createPartyBtn.disabled = !isSignedIn || !backendReady;
 
   if (isSignedIn) {
@@ -172,9 +253,67 @@ function setAuthUi() {
   }
 }
 
+async function copyToClipboard(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // fallback below
+  }
+
+  try {
+    const temp = document.createElement('textarea');
+    temp.value = value;
+    temp.setAttribute('readonly', 'true');
+    temp.style.position = 'fixed';
+    temp.style.opacity = '0';
+    document.body.appendChild(temp);
+    temp.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(temp);
+    return Boolean(ok);
+  } catch {
+    return false;
+  }
+}
+
+async function copySecret(label, value) {
+  const ok = await copyToClipboard(value);
+  if (ok) {
+    setStatus(createResult, `${label} copied.`, 'success');
+  } else {
+    setStatus(createResult, `Could not copy ${label}.`, 'error');
+  }
+}
+
+async function pingBackendHealth(targetBase) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
+
+  try {
+    const res = await fetch(`${targetBase}/health`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      throw new Error(`Health check failed (${res.status})`);
+    }
+
+    return true;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function apiRequest(path, options = {}) {
-  if (!API_BASE) {
-    throw new Error('Backend is not configured. Set PULSE_API_BASE in GitHub repo variables and redeploy Pages.');
+  if (!apiBase) {
+    throw new Error('Backend is not configured. Open Setup Window and save API Base URL.');
   }
 
   const controller = new AbortController();
@@ -190,7 +329,7 @@ async function apiRequest(path, options = {}) {
       headers.Authorization = `Bearer ${authToken}`;
     }
 
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`${apiBase}${path}`, {
       method: options.method || 'GET',
       headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
@@ -218,31 +357,34 @@ async function apiRequest(path, options = {}) {
 }
 
 async function checkBackendHealth() {
-  if (!API_BASE) {
-    setStatus(
-      backendStatus,
-      'Backend not configured yet. Set PULSE_API_BASE in GitHub repository variables and redeploy.',
-      'error'
-    );
-    return;
+  if (!apiBase) {
+    setStatus(backendStatus, 'Backend not configured. Open Setup Window and set API Base URL.', 'error');
+    setStatus(apiBaseConfigStatus, 'No saved API base URL yet.', 'neutral');
+    return false;
   }
 
-  setStatus(backendStatus, `Connecting to backend: ${API_BASE}`, 'info');
+  setStatus(backendStatus, `Connecting to backend: ${apiBase}`, 'info');
 
   try {
-    await apiRequest('/health', { method: 'GET', timeoutMs: 7000 });
+    await pingBackendHealth(apiBase);
     setStatus(backendStatus, 'Backend connected.', 'success');
+    setStatus(apiBaseConfigStatus, `Connected to ${apiBase}`, 'success');
+    return true;
   } catch (error) {
-    setStatus(
-      backendStatus,
-      `Backend unreachable (${API_BASE}). Deploy API server and set PULSE_API_BASE.`,
-      'error'
-    );
+    setStatus(backendStatus, `Backend unreachable (${apiBase}). Check Setup Window.`, 'error');
+    setStatus(apiBaseConfigStatus, error.message || 'Backend health check failed.', 'error');
+    return false;
   }
 }
 
 async function refreshAuthIdentity() {
   if (!authToken) {
+    authUser = null;
+    setAuthUi();
+    return;
+  }
+
+  if (!apiBase) {
     authUser = null;
     setAuthUi();
     return;
@@ -268,8 +410,9 @@ async function submitAuth(mode) {
     .toLowerCase();
   const password = String(authPasswordInput.value || '').trim();
 
-  if (!API_BASE) {
-    setStatus(authResult, 'Backend is not configured yet.', 'error');
+  if (!apiBase) {
+    setStatus(authResult, 'Backend is not configured. Open Setup Window first.', 'error');
+    setWindow('setup');
     return;
   }
 
@@ -402,62 +545,6 @@ async function runAppleMusicSearch() {
   }
 }
 
-partyCodeInput.addEventListener('input', () => {
-  partyCodeInput.value = normalizePartyCode(partyCodeInput.value);
-});
-
-registerBtn.addEventListener('click', () => {
-  submitAuth('register');
-});
-
-loginBtn.addEventListener('click', () => {
-  submitAuth('login');
-});
-
-logoutBtn.addEventListener('click', () => {
-  authUser = null;
-  setAuthToken('');
-  setAuthUi();
-  hidePanel(requestSection);
-  activePartyCode = null;
-  setStatus(joinResult, 'Waiting for code.', 'neutral');
-});
-
-createPartyBtn.addEventListener('click', async () => {
-  setButtonLoading(createPartyBtn, true, 'Creating...', 'Create Party');
-  setStatus(createResult, 'Generating secure party credentials...', 'info');
-
-  try {
-    const data = await apiRequest('/api/parties', { method: 'POST', auth: true });
-    partyCodeOut.textContent = data.code;
-    djKeyOut.textContent = data.djKey;
-    revealPanel(djSecrets);
-
-    setStatus(
-      createResult,
-      `Party ${data.code} created. Save the DJ key now and use it only in the DJ app.`,
-      'success'
-    );
-  } catch (error) {
-    if (error.status === 401) {
-      authUser = null;
-      setAuthToken('');
-      setAuthUi();
-    }
-    setStatus(createResult, error.message || 'Failed to create party.', 'error');
-  } finally {
-    createPartyBtn.textContent = 'Create Party';
-    createPartyBtn.disabled = !(authUser && authToken && API_BASE);
-  }
-});
-
-joinForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-
-  const code = normalizePartyCode(partyCodeInput.value);
-  await joinPartyByCode(code);
-});
-
 async function joinPartyByCode(code) {
   if (!PARTY_CODE_PATTERN.test(code)) {
     setStatus(joinResult, 'Party code must be exactly 6 letters/numbers.', 'error');
@@ -489,6 +576,150 @@ async function joinPartyByCode(code) {
     return false;
   }
 }
+
+windowTabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    setWindow(tab.dataset.window);
+  });
+});
+
+openSetupBtn.addEventListener('click', () => {
+  setWindow('setup');
+  apiBaseConfigInput.focus();
+});
+
+apiBaseConfigForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  const candidate = normalizeApiBaseCandidate(apiBaseConfigInput.value);
+  if (!candidate) {
+    setStatus(apiBaseConfigStatus, 'Enter a valid http(s) API URL.', 'error');
+    return;
+  }
+
+  setButtonLoading(saveApiBaseBtn, true, 'Saving...', 'Save');
+
+  try {
+    setApiBase(candidate);
+    const ok = await checkBackendHealth();
+    if (ok) {
+      await refreshAuthIdentity();
+      setStatus(apiBaseConfigStatus, `Saved and connected: ${apiBase}`, 'success');
+      if (activeWindow === 'setup') {
+        setWindow('guest');
+      }
+    }
+  } finally {
+    setButtonLoading(saveApiBaseBtn, false, 'Saving...', 'Save');
+  }
+});
+
+testApiBaseBtn.addEventListener('click', async () => {
+  const candidate = normalizeApiBaseCandidate(apiBaseConfigInput.value);
+  if (!candidate) {
+    setStatus(apiBaseConfigStatus, 'Enter a valid http(s) API URL.', 'error');
+    return;
+  }
+
+  setButtonLoading(testApiBaseBtn, true, 'Testing...', 'Test');
+
+  try {
+    await pingBackendHealth(candidate);
+    setStatus(apiBaseConfigStatus, `Reachable: ${candidate}`, 'success');
+  } catch (error) {
+    setStatus(apiBaseConfigStatus, error.message || 'Could not reach backend.', 'error');
+  } finally {
+    setButtonLoading(testApiBaseBtn, false, 'Testing...', 'Test');
+  }
+});
+
+clearApiBaseBtn.addEventListener('click', () => {
+  setApiBase('');
+  authUser = null;
+  setAuthToken('');
+  setAuthUi();
+  hidePanel(requestSection);
+  setStatus(apiBaseConfigStatus, 'API base cleared.', 'neutral');
+  setStatus(backendStatus, 'Backend not configured. Open Setup Window and set API Base URL.', 'error');
+  setWindow('setup');
+});
+
+partyCodeInput.addEventListener('input', () => {
+  partyCodeInput.value = normalizePartyCode(partyCodeInput.value);
+});
+
+registerBtn.addEventListener('click', () => {
+  submitAuth('register');
+});
+
+loginBtn.addEventListener('click', () => {
+  submitAuth('login');
+});
+
+authForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  submitAuth('login');
+});
+
+authEmailInput.addEventListener('blur', () => {
+  authEmailInput.value = String(authEmailInput.value || '')
+    .trim()
+    .toLowerCase();
+});
+
+logoutBtn.addEventListener('click', () => {
+  authUser = null;
+  setAuthToken('');
+  setAuthUi();
+  setStatus(joinResult, 'Waiting for code.', 'neutral');
+  setWindow('dj');
+});
+
+createPartyBtn.addEventListener('click', async () => {
+  setButtonLoading(createPartyBtn, true, 'Creating...', 'Create Party');
+  setStatus(createResult, 'Generating secure party credentials...', 'info');
+
+  try {
+    const data = await apiRequest('/api/parties', { method: 'POST', auth: true });
+    partyCodeOut.textContent = data.code;
+    djKeyOut.textContent = data.djKey;
+    revealPanel(djSecrets);
+
+    setStatus(
+      createResult,
+      `Party ${data.code} created. Save the DJ key now and use it only in the DJ app.`,
+      'success'
+    );
+
+    partyCodeInput.value = data.code;
+    setStatus(joinResult, `Party code ${data.code} copied into Guest Window input.`, 'info');
+  } catch (error) {
+    if (error.status === 401) {
+      authUser = null;
+      setAuthToken('');
+      setAuthUi();
+    }
+    setStatus(createResult, error.message || 'Failed to create party.', 'error');
+  } finally {
+    createPartyBtn.textContent = 'Create Party';
+    createPartyBtn.disabled = !(authUser && authToken && apiBase);
+  }
+});
+
+copyPartyCodeBtn.addEventListener('click', async () => {
+  await copySecret('Party code', partyCodeOut.textContent);
+});
+
+copyDjKeyBtn.addEventListener('click', async () => {
+  await copySecret('DJ key', djKeyOut.textContent);
+});
+
+joinForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  const code = normalizePartyCode(partyCodeInput.value);
+  await joinPartyByCode(code);
+});
 
 requestForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -542,7 +773,15 @@ requestForm.addEventListener('submit', async (event) => {
     });
 
     setStatus(requestResult, `Queued #${data.seqNo}: ${data.title} - ${data.artist}`, 'success');
-    requestForm.reset();
+
+    const titleInput = document.getElementById('title');
+    const artistInput = document.getElementById('artist');
+    const urlInput = document.getElementById('appleMusicUrl');
+    titleInput.value = '';
+    artistInput.value = '';
+    urlInput.value = '';
+    appleSearchTermInput.value = '';
+    appleSearchResults.textContent = '';
     toggleAppleSearchVisibility();
   } catch (error) {
     setStatus(requestResult, error.message || 'Request failed.', 'error');
@@ -566,24 +805,26 @@ requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
   input.addEventListener('change', toggleAppleSearchVisibility);
 });
 
-authForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  submitAuth('login');
-});
-
-authEmailInput.addEventListener('blur', () => {
-  authEmailInput.value = String(authEmailInput.value || '')
-    .trim()
-    .toLowerCase();
-});
-
-refreshAuthIdentity();
+setApiBase(apiBase);
+setWindow('guest');
 toggleAppleSearchVisibility();
-checkBackendHealth();
 
-const codeFromUrl = readPartyCodeFromUrl();
-if (PARTY_CODE_PATTERN.test(codeFromUrl)) {
-  partyCodeInput.value = codeFromUrl;
-  setStatus(joinResult, `Party code ${codeFromUrl} loaded from QR link. Checking now...`, 'info');
-  joinPartyByCode(codeFromUrl);
-}
+(async () => {
+  const backendOk = await checkBackendHealth();
+  if (backendOk) {
+    await refreshAuthIdentity();
+  }
+
+  const codeFromUrl = readPartyCodeFromUrl();
+  if (PARTY_CODE_PATTERN.test(codeFromUrl)) {
+    setWindow('guest');
+    partyCodeInput.value = codeFromUrl;
+    setStatus(joinResult, `Party code ${codeFromUrl} loaded from QR link. Checking now...`, 'info');
+    await joinPartyByCode(codeFromUrl);
+    return;
+  }
+
+  if (!apiBase) {
+    setWindow('setup');
+  }
+})();

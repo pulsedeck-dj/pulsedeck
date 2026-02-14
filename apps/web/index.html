@@ -19,75 +19,39 @@
 
     <main class="shell">
       <header class="hero reveal">
-        <p class="eyebrow">PulseDeck Live Request System</p>
-        <h1>Party Code In. Song Queue Out.</h1>
+        <p class="eyebrow">PulseDeck Official Request System</p>
+        <h1>Simple For Guests. Solid For DJs.</h1>
         <p class="subtitle">
-          DJ account authentication, secure party sessions, and live song requests with Apple Music search.
+          Secure DJ login, one-tap party creation, and a clean song request flow with Apple Music search.
         </p>
-        <p id="backendStatus" class="status status-info" aria-live="polite">Checking backend connection...</p>
+
+        <div class="hero-meta">
+          <p id="backendStatus" class="status status-info" aria-live="polite">Checking backend connection...</p>
+          <button id="openSetupBtn" class="btn btn-ghost" type="button">Connection Settings</button>
+        </div>
+
         <div class="flow-strip" aria-label="How it works">
-          <span>Sign in DJ</span>
-          <span>Create room</span>
-          <span>Claim DJ app</span>
+          <span>DJ signs in</span>
+          <span>Party created</span>
+          <span>DJ app claims code</span>
           <span>Guests request songs</span>
         </div>
       </header>
 
-      <section class="panel-grid panel-grid-3">
-        <article class="panel reveal delay-1" id="authSection">
+      <nav class="window-tabs reveal delay-1" aria-label="App windows">
+        <button id="tabGuest" class="window-tab is-active" type="button" data-window="guest">Guest Window</button>
+        <button id="tabDj" class="window-tab" type="button" data-window="dj">DJ Window</button>
+        <button id="tabSetup" class="window-tab" type="button" data-window="setup">Setup Window</button>
+      </nav>
+
+      <section id="guestWindow" class="window-panel reveal delay-2" data-window="guest">
+        <article class="panel" id="joinSection">
           <div class="panel-head">
-            <h2>DJ Account</h2>
-            <span class="chip">Auth</span>
+            <h2>Join Party</h2>
+            <span class="chip">Guest</span>
           </div>
-          <p class="panel-copy">Register or log in before creating party codes.</p>
+          <p class="panel-copy">Enter the party code from the DJ screen.</p>
 
-          <form id="authForm" class="form-grid">
-            <label for="authEmail">Email</label>
-            <input id="authEmail" type="email" autocomplete="email" required />
-
-            <label for="authPassword">Password</label>
-            <input id="authPassword" type="password" minlength="10" autocomplete="current-password" required />
-
-            <div class="button-row">
-              <button id="registerBtn" class="btn btn-secondary" type="button">Register</button>
-              <button id="loginBtn" class="btn btn-primary" type="button">Login</button>
-            </div>
-          </form>
-
-          <button id="logoutBtn" class="btn btn-ghost hidden" type="button">Logout</button>
-          <p id="authResult" class="status status-neutral" aria-live="polite">Not signed in.</p>
-          <p id="authIdentity" class="micro-note hidden"></p>
-        </article>
-
-        <article class="panel reveal delay-2" id="createSection">
-          <div class="panel-head">
-            <h2>DJ Console</h2>
-            <span class="chip">Secure</span>
-          </div>
-          <p class="panel-copy">Create a party room and private DJ key.</p>
-          <button id="createPartyBtn" class="btn btn-primary" disabled>Create Party</button>
-          <p id="createResult" class="status status-neutral" aria-live="polite">Sign in to create parties.</p>
-
-          <div id="djSecrets" class="secret-grid hidden" aria-live="polite">
-            <div class="secret-card">
-              <span>Party Code</span>
-              <strong id="partyCodeOut">------</strong>
-            </div>
-            <div class="secret-card">
-              <span>DJ Key</span>
-              <strong id="djKeyOut">----------</strong>
-            </div>
-          </div>
-
-          <p class="micro-note">Share the party code publicly. Keep the DJ key private.</p>
-        </article>
-
-        <article class="panel reveal delay-3" id="joinSection">
-          <div class="panel-head">
-            <h2>Guest Entry</h2>
-            <span class="chip">Live</span>
-          </div>
-          <p class="panel-copy">Enter the code shown by the DJ.</p>
           <form id="joinForm" class="form-grid">
             <label for="partyCode">Party Code</label>
             <input id="partyCode" maxlength="6" autocomplete="off" required />
@@ -95,54 +59,154 @@
           </form>
           <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for code.</p>
         </article>
+
+        <article class="panel hidden" id="requestSection">
+          <div class="panel-head">
+            <h2>Send Song Request</h2>
+            <span class="chip">Live Queue</span>
+          </div>
+
+          <form id="requestForm" class="form-grid">
+            <p class="mini-label">Choose service</p>
+            <div class="service-row" role="radiogroup" aria-label="Music service">
+              <label class="service-pill">
+                <input type="radio" name="service" value="Apple Music" checked />
+                <span>Apple Music</span>
+              </label>
+              <label class="service-pill">
+                <input type="radio" name="service" value="Spotify" />
+                <span>Spotify</span>
+              </label>
+              <label class="service-pill">
+                <input type="radio" name="service" value="YouTube" />
+                <span>YouTube</span>
+              </label>
+            </div>
+
+            <div id="appleSearchSection" class="apple-search">
+              <label for="appleSearchTerm">Search Apple Music</label>
+              <div class="search-row">
+                <input id="appleSearchTerm" maxlength="120" placeholder="Search song or artist" />
+                <button id="appleSearchBtn" class="btn btn-secondary" type="button">Search</button>
+              </div>
+              <p id="appleSearchStatus" class="status status-neutral">Search to autofill song info.</p>
+              <div id="appleSearchResults" class="search-results"></div>
+            </div>
+
+            <label for="title">Song Title</label>
+            <input id="title" maxlength="120" required />
+
+            <label for="artist">Artist</label>
+            <input id="artist" maxlength="120" required />
+
+            <label for="appleMusicUrl">Song URL (optional)</label>
+            <input id="appleMusicUrl" maxlength="500" placeholder="https://music.apple.com/..." />
+
+            <button type="submit" class="btn btn-primary">Submit Request</button>
+          </form>
+
+          <p id="requestResult" class="status status-neutral" aria-live="polite">No request submitted yet.</p>
+        </article>
       </section>
 
-      <section class="panel hidden reveal" id="requestSection">
-        <div class="panel-head">
-          <h2>Send Song Request</h2>
-          <span class="chip">Queue</span>
-        </div>
-
-        <form id="requestForm" class="form-grid">
-          <p class="mini-label">Choose service</p>
-          <div class="service-row" role="radiogroup" aria-label="Music service">
-            <label class="service-pill">
-              <input type="radio" name="service" value="Apple Music" checked />
-              <span>Apple Music</span>
-            </label>
-            <label class="service-pill">
-              <input type="radio" name="service" value="Spotify" />
-              <span>Spotify</span>
-            </label>
-            <label class="service-pill">
-              <input type="radio" name="service" value="YouTube" />
-              <span>YouTube</span>
-            </label>
-          </div>
-
-          <div id="appleSearchSection" class="apple-search">
-            <label for="appleSearchTerm">Search Apple Music</label>
-            <div class="search-row">
-              <input id="appleSearchTerm" maxlength="120" placeholder="Search song or artist" />
-              <button id="appleSearchBtn" class="btn btn-secondary" type="button">Search</button>
+      <section id="djWindow" class="window-panel hidden" data-window="dj">
+        <div class="panel-grid panel-grid-2">
+          <article class="panel" id="authSection">
+            <div class="panel-head">
+              <h2>DJ Account</h2>
+              <span class="chip">Auth</span>
             </div>
-            <p id="appleSearchStatus" class="status status-neutral">Search to autofill song info.</p>
-            <div id="appleSearchResults" class="search-results"></div>
-          </div>
+            <p class="panel-copy">Register or log in before creating party codes.</p>
 
-          <label for="title">Song Title</label>
-          <input id="title" maxlength="120" required />
+            <form id="authForm" class="form-grid">
+              <label for="authEmail">Email</label>
+              <input id="authEmail" type="email" autocomplete="email" required />
 
-          <label for="artist">Artist</label>
-          <input id="artist" maxlength="120" required />
+              <label for="authPassword">Password</label>
+              <input id="authPassword" type="password" minlength="10" autocomplete="current-password" required />
 
-          <label for="appleMusicUrl">Song URL (optional)</label>
-          <input id="appleMusicUrl" maxlength="500" placeholder="https://music.apple.com/..." />
+              <div class="button-row">
+                <button id="registerBtn" class="btn btn-secondary" type="button">Register</button>
+                <button id="loginBtn" class="btn btn-primary" type="button">Login</button>
+              </div>
+            </form>
 
-          <button type="submit" class="btn btn-primary">Submit Request</button>
-        </form>
+            <button id="logoutBtn" class="btn btn-ghost hidden" type="button">Logout</button>
+            <p id="authResult" class="status status-neutral" aria-live="polite">Not signed in.</p>
+            <p id="authIdentity" class="micro-note hidden"></p>
+          </article>
 
-        <p id="requestResult" class="status status-neutral" aria-live="polite">No request submitted yet.</p>
+          <article class="panel" id="createSection">
+            <div class="panel-head">
+              <h2>Party Control</h2>
+              <span class="chip">Secure</span>
+            </div>
+            <p class="panel-copy">Create a room and private DJ key for your DJ desktop app.</p>
+            <button id="createPartyBtn" class="btn btn-primary" disabled>Create Party</button>
+            <p id="createResult" class="status status-neutral" aria-live="polite">Sign in to create parties.</p>
+
+            <div id="djSecrets" class="secret-grid hidden" aria-live="polite">
+              <div class="secret-card">
+                <span>Party Code</span>
+                <strong id="partyCodeOut">------</strong>
+                <button id="copyPartyCodeBtn" class="btn btn-ghost" type="button">Copy Code</button>
+              </div>
+              <div class="secret-card">
+                <span>DJ Key</span>
+                <strong id="djKeyOut">----------</strong>
+                <button id="copyDjKeyBtn" class="btn btn-ghost" type="button">Copy DJ Key</button>
+              </div>
+            </div>
+
+            <p class="micro-note">
+              Share the party code publicly. Keep the DJ key private and only enter it in PulseDeck DJ desktop.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="setupWindow" class="window-panel hidden" data-window="setup">
+        <div class="panel-grid panel-grid-2">
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Backend Connection</h2>
+              <span class="chip">Required</span>
+            </div>
+            <p class="panel-copy">
+              Set your API base URL once. This makes the live site work even if default config is empty.
+            </p>
+
+            <form id="apiBaseConfigForm" class="form-grid">
+              <label for="apiBaseConfig">API Base URL</label>
+              <input id="apiBaseConfig" placeholder="https://your-api.example.com" />
+
+              <div class="button-row button-row-3">
+                <button id="saveApiBaseBtn" class="btn btn-primary" type="submit">Save</button>
+                <button id="testApiBaseBtn" class="btn btn-secondary" type="button">Test</button>
+                <button id="clearApiBaseBtn" class="btn btn-ghost" type="button">Clear</button>
+              </div>
+            </form>
+
+            <p id="apiBaseConfigStatus" class="status status-neutral" aria-live="polite">No saved API base URL yet.</p>
+            <p class="micro-note">Current effective API base: <span id="effectiveApiBase">Not configured</span></p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Operator Guide</h2>
+              <span class="chip">Quick Start</span>
+            </div>
+            <ol class="guide-list">
+              <li>Open DJ Window, sign in, and create a party.</li>
+              <li>Open PulseDeck DJ desktop and enter API Base URL, Party Code, and DJ Key.</li>
+              <li>Click Connect in the DJ desktop app.</li>
+              <li>Guests open Guest Window and enter the code to submit songs.</li>
+            </ol>
+            <p class="micro-note">
+              Tip: The DJ app can generate a QR code that opens this page with the party code already filled in.
+            </p>
+          </article>
+        </div>
       </section>
     </main>
 
