@@ -1,6 +1,6 @@
 {
   "name": "dj-app",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "PulseDeck macOS DJ desktop app",
   "author": "PulseDeck",
   "private": true,
@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "env -u ELECTRON_RUN_AS_NODE electron .",
     "start": "env -u ELECTRON_RUN_AS_NODE electron .",
-    "build:mac": "electron-builder --mac dmg",
+    "build:mac": "electron-builder --mac dmg --arm64 --x64",
     "build:dir": "electron-builder --dir"
   },
   "dependencies": {
