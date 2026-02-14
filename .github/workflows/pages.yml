@@ -32,13 +32,18 @@ jobs:
           API_BASE="${{ vars.PULSE_API_BASE }}"
           SUPABASE_URL="${{ vars.PULSE_SUPABASE_URL }}"
           SUPABASE_ANON_KEY="${{ vars.PULSE_SUPABASE_ANON_KEY }}"
-          cat > site/config.js <<EOF
-          window.PULSE_CONFIG = {
-            apiBase: "${API_BASE}",
-            supabaseUrl: "${SUPABASE_URL}",
-            supabaseAnonKey: "${SUPABASE_ANON_KEY}"
-          };
-          EOF
+
+          # Avoid broken JS if a variable contains quotes/newlines.
+          API_BASE="$API_BASE" SUPABASE_URL="$SUPABASE_URL" SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" node - <<'NODE'
+          const fs = require('fs');
+
+          const apiBase = String(process.env.API_BASE || '').trim();
+          const supabaseUrl = String(process.env.SUPABASE_URL || '').trim();
+          const supabaseAnonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
+
+          const cfg = { apiBase, supabaseUrl, supabaseAnonKey };
+          fs.writeFileSync('site/config.js', `window.PULSE_CONFIG = ${JSON.stringify(cfg, null, 2)};\n`, 'utf8');
+          NODE
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
