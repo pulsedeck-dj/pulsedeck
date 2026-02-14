@@ -2,7 +2,9 @@
 -- This enables DJ auth via Supabase Auth, party creation, DJ claiming/heartbeat,
 -- and guest song requests via RPC (no direct table access for guests).
 
-create extension if not exists pgcrypto;
+-- Supabase installs many extensions into the `extensions` schema.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 -- Core tables
 create table if not exists public.parties (
@@ -109,7 +111,7 @@ language sql
 immutable
 as $$
   -- pgcrypto.digest expects bytea input
-  select encode(digest(convert_to(coalesce(p_text,''), 'utf8'), 'sha256'), 'hex')
+  select encode(extensions.digest(convert_to(coalesce(p_text,''), 'utf8'), 'sha256'::text), 'hex')
 $$;
 
 create or replace function public.normalize_party_code(p_text text)
