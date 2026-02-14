@@ -405,7 +405,7 @@ createPartyBtn.addEventListener('click', async () => {
     setStatus(createResult, error.message || 'Failed to create party.', 'error');
   } finally {
     createPartyBtn.textContent = 'Create Party';
-    createPartyBtn.disabled = !(authUser && authToken);
+    createPartyBtn.disabled = !(authUser && authToken && API_BASE);
   }
 });
 
