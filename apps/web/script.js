@@ -5,17 +5,14 @@ function trimApiBase(value) {
 }
 
 function detectDefaultApiBase() {
-  const { protocol, hostname, port, origin } = window.location;
+  const { hostname, port } = window.location;
   if (hostname === 'localhost' && port === '5173') {
     return 'http://localhost:4000';
   }
   if (hostname === '127.0.0.1' && port === '5173') {
     return 'http://localhost:4000';
   }
-  if (protocol.startsWith('http')) {
-    return origin;
-  }
-  return 'http://localhost:4000';
+  return '';
 }
 
 const API_BASE =
@@ -33,6 +30,7 @@ const loginBtn = document.getElementById('loginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const authResult = document.getElementById('authResult');
 const authIdentity = document.getElementById('authIdentity');
+const backendStatus = document.getElementById('backendStatus');
 
 const createPartyBtn = document.getElementById('createPartyBtn');
 const createResult = document.getElementById('createResult');
@@ -125,7 +123,8 @@ function setAuthToken(token) {
 
 function setAuthUi() {
   const isSignedIn = Boolean(authUser && authToken);
-  createPartyBtn.disabled = !isSignedIn;
+  const backendReady = Boolean(API_BASE);
+  createPartyBtn.disabled = !isSignedIn || !backendReady;
 
   if (isSignedIn) {
     authIdentity.textContent = `Signed in as ${authUser.email}`;
@@ -146,6 +145,10 @@ function setAuthUi() {
 }
 
 async function apiRequest(path, options = {}) {
+  if (!API_BASE) {
+    throw new Error('Backend is not configured. Set PULSE_API_BASE in GitHub repo variables and redeploy Pages.');
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 9000);
 
@@ -183,6 +186,30 @@ async function apiRequest(path, options = {}) {
     throw error;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function checkBackendHealth() {
+  if (!API_BASE) {
+    setStatus(
+      backendStatus,
+      'Backend not configured yet. Set PULSE_API_BASE in GitHub repository variables and redeploy.',
+      'error'
+    );
+    return;
+  }
+
+  setStatus(backendStatus, `Connecting to backend: ${API_BASE}`, 'info');
+
+  try {
+    await apiRequest('/health', { method: 'GET', timeoutMs: 7000 });
+    setStatus(backendStatus, 'Backend connected.', 'success');
+  } catch (error) {
+    setStatus(
+      backendStatus,
+      `Backend unreachable (${API_BASE}). Deploy API server and set PULSE_API_BASE.`,
+      'error'
+    );
   }
 }
 
@@ -487,3 +514,4 @@ requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
 
 refreshAuthIdentity();
 toggleAppleSearchVisibility();
+checkBackendHealth();
