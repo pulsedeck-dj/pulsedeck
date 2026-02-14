@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PulseDeck DJ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="bg-orb bg-orb-a"></div>
+    <div class="bg-orb bg-orb-b"></div>
+
+    <main class="layout">
+      <header class="hero">
+        <p class="eyebrow">PulseDeck DJ Desktop</p>
+        <h1>Live DJ Control</h1>
+        <p class="subtitle">Claim your party, receive requests instantly, and auto-save them to Desktop.</p>
+      </header>
+
+      <section class="panel panel-form">
+        <div class="panel-head">
+          <h2>Connection</h2>
+          <span id="statusPill" class="status-pill status-idle">Idle</span>
+        </div>
+
+        <div class="form-grid">
+          <label for="apiBase">API Base URL</label>
+          <input id="apiBase" type="text" />
+
+          <label for="partyCode">Party Code</label>
+          <input id="partyCode" maxlength="6" />
+
+          <label for="djKey">DJ Key</label>
+          <input id="djKey" type="password" />
+
+          <label for="deviceName">Device Name</label>
+          <input id="deviceName" />
+
+          <label for="requestsDir">Requests Folder</label>
+          <input id="requestsDir" />
+
+          <label class="check-row" for="autoDownload">
+            <input id="autoDownload" type="checkbox" />
+            <span>Auto-download Apple Music requests</span>
+          </label>
+
+          <label for="downloadCommand">Download Command Template</label>
+          <input id="downloadCommand" type="text" placeholder='gamdl --cookie-file {{cookieFile}} --output {{outputDir}} {{url}}' />
+
+          <label for="cookieFilePath">Cookie File Path (optional)</label>
+          <input id="cookieFilePath" type="text" placeholder="/Users/you/apple-music-cookie.txt" />
+        </div>
+
+        <div class="button-row">
+          <button id="saveBtn" class="btn btn-ghost">Save Settings</button>
+          <button id="connectBtn" class="btn btn-primary">Connect</button>
+          <button id="disconnectBtn" class="btn btn-secondary">Disconnect</button>
+        </div>
+
+        <p id="statusText" class="status-text">Not connected.</p>
+        <p class="status-tip">
+          Command placeholders: <code>{{url}}</code>, <code>{{outputDir}}</code>, <code>{{cookieFile}}</code>, <code>{{title}}</code>, <code>{{artist}}</code>, <code>{{seqNo}}</code>
+        </p>
+      </section>
+
+      <section class="grid-two">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Recent Requests</h2>
+            <span id="requestCount" class="count-pill">0</span>
+          </div>
+          <div id="requestsList" class="requests-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Activity Log</h2>
+          </div>
+          <div id="logList" class="log-list"></div>
+        </article>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

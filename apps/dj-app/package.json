@@ -1,0 +1,44 @@
+{
+  "name": "dj-app",
+  "version": "0.2.0",
+  "description": "PulseDeck macOS DJ desktop app",
+  "author": "PulseDeck",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "ELECTRON_RUN_AS_NODE= electron .",
+    "start": "ELECTRON_RUN_AS_NODE= electron .",
+    "build:mac": "electron-builder --mac dmg",
+    "build:dir": "electron-builder --dir"
+  },
+  "dependencies": {
+    "axios": "^1.8.2",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "7zip-bin": "^5.2.0",
+    "electron": "31.7.7",
+    "electron-builder": "24.13.3"
+  },
+  "build": {
+    "appId": "com.pulsedeck.dj",
+    "productName": "PulseDeck DJ",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "PulseDeck-DJ-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "writeUpdateInfo": false
+    }
+  }
+}

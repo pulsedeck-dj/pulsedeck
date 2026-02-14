@@ -1,0 +1,22 @@
+{
+  "name": "dj-party-app",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:server": "npm --workspace apps/server run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:dj": "npm --workspace apps/dj-app run dev",
+    "dev": "concurrently -n server,web,dj -c cyan,green,yellow \"npm run dev:server\" \"npm run dev:web\" \"npm run dev:dj\"",
+    "start:server": "npm --workspace apps/server run start",
+    "start:prod": "npm --workspace apps/server run prisma:migrate:deploy && npm --workspace apps/server run start",
+    "build:dj:mac": "npm --workspace apps/dj-app run build:mac",
+    "smoke:test": "node scripts/smoke-test.mjs"
+  },
+  "devDependencies": {
+    "7zip-bin": "^5.2.0",
+    "concurrently": "^9.1.2"
+  }
+}

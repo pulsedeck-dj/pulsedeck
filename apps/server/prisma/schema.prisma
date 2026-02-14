@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  parties      Party[]
+}
+
+model Party {
+  id                String          @id @default(cuid())
+  code              String          @unique
+  status            String          @default("live")
+  createdAt         DateTime        @default(now())
+  expiresAt         DateTime
+  djKeyHash         String
+  ownerId           String
+  owner             User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  activeDjSessionId String?         @unique
+  activeDjSession   DjSession?      @relation("ActiveSession", fields: [activeDjSessionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  djSessions        DjSession[]     @relation("PartySessions")
+  requests          SongRequest[]
+  idempotencyKeys   IdempotencyKey[]
+
+  @@index([ownerId])
+}
+
+model DjSession {
+  id            String   @id @default(cuid())
+  partyId       String
+  party         Party    @relation("PartySessions", fields: [partyId], references: [id], onDelete: Cascade)
+  tokenHash     String
+  deviceName    String
+  active        Boolean  @default(true)
+  heartbeatAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  activeForParty Party?  @relation("ActiveSession")
+
+  @@index([partyId, active])
+}
+
+model SongRequest {
+  id             String           @id @default(cuid())
+  seqNo          Int
+  partyId        String
+  party          Party            @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  title          String
+  artist         String
+  service        String
+  appleMusicUrl  String?
+  createdAt      DateTime         @default(now())
+  idempotencyKeys IdempotencyKey[]
+
+  @@unique([partyId, seqNo])
+  @@index([partyId, createdAt])
+}
+
+model IdempotencyKey {
+  id        String      @id @default(cuid())
+  partyId   String
+  party     Party       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  key       String
+  requestId String
+  request   SongRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([partyId, key])
+  @@index([requestId])
+}

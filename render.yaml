@@ -1,0 +1,34 @@
+databases:
+  - name: pulsedeck-db
+    databaseName: pulsedeck
+    user: pulsedeck
+
+services:
+  - type: web
+    name: pulsedeck
+    runtime: node
+    branch: main
+    rootDir: .
+    buildCommand: npm ci && npm --workspace apps/server run prisma:generate && npm --workspace apps/server run prisma:migrate:deploy
+    startCommand: npm run start:server
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pulsedeck-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: TRUST_PROXY
+        value: "true"
+      - key: SERVE_WEB
+        value: "true"
+      - key: WEB_ORIGIN
+        sync: false
+      - key: APPLE_MUSIC_DEVELOPER_TOKEN
+        sync: false
+      - key: APPLE_MUSIC_STOREFRONT
+        value: us
