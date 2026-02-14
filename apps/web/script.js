@@ -20,9 +20,12 @@ const API_BASE =
   trimApiBase(window.PULSE_CONFIG?.apiBase) ||
   detectDefaultApiBase();
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
+const AUTH_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'YouTube']);
 const AUTH_TOKEN_KEY = 'pulse_auth_token';
+const PASSWORD_MIN_LENGTH = 10;
 
+const authForm = document.getElementById('authForm');
 const authEmailInput = document.getElementById('authEmail');
 const authPasswordInput = document.getElementById('authPassword');
 const registerBtn = document.getElementById('registerBtn');
@@ -87,6 +90,24 @@ function setButtonsLoading(buttons, loading) {
   }
 }
 
+function revealPanel(panel) {
+  panel.classList.remove('hidden');
+  panel.classList.remove('panel-pop');
+  void panel.offsetWidth;
+  panel.classList.add('panel-pop');
+}
+
+function hidePanel(panel) {
+  panel.classList.add('hidden');
+  panel.classList.remove('panel-pop');
+}
+
+function resetDjSecrets() {
+  partyCodeOut.textContent = '------';
+  djKeyOut.textContent = '----------';
+  djSecrets.classList.add('hidden');
+}
+
 function makeIdempotencyKey() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') {
     return window.crypto.randomUUID();
@@ -147,6 +168,7 @@ function setAuthUi() {
     logoutBtn.classList.add('hidden');
     setStatus(authResult, 'Not signed in.', 'neutral');
     setStatus(createResult, 'Sign in to create parties.', 'neutral');
+    resetDjSecrets();
   }
 }
 
@@ -241,8 +263,25 @@ async function refreshAuthIdentity() {
 }
 
 async function submitAuth(mode) {
-  const email = String(authEmailInput.value || '').trim();
+  const email = String(authEmailInput.value || '')
+    .trim()
+    .toLowerCase();
   const password = String(authPasswordInput.value || '').trim();
+
+  if (!API_BASE) {
+    setStatus(authResult, 'Backend is not configured yet.', 'error');
+    return;
+  }
+
+  if (!AUTH_EMAIL_PATTERN.test(email)) {
+    setStatus(authResult, 'Enter a valid email address.', 'error');
+    return;
+  }
+
+  if (mode === 'register' && password.length < PASSWORD_MIN_LENGTH) {
+    setStatus(authResult, `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`, 'error');
+    return;
+  }
 
   if (!email || !password) {
     setStatus(authResult, 'Enter email and password.', 'error');
@@ -379,6 +418,9 @@ logoutBtn.addEventListener('click', () => {
   authUser = null;
   setAuthToken('');
   setAuthUi();
+  hidePanel(requestSection);
+  activePartyCode = null;
+  setStatus(joinResult, 'Waiting for code.', 'neutral');
 });
 
 createPartyBtn.addEventListener('click', async () => {
@@ -389,7 +431,7 @@ createPartyBtn.addEventListener('click', async () => {
     const data = await apiRequest('/api/parties', { method: 'POST', auth: true });
     partyCodeOut.textContent = data.code;
     djKeyOut.textContent = data.djKey;
-    djSecrets.classList.remove('hidden');
+    revealPanel(djSecrets);
 
     setStatus(
       createResult,
@@ -419,7 +461,7 @@ joinForm.addEventListener('submit', async (event) => {
 async function joinPartyByCode(code) {
   if (!PARTY_CODE_PATTERN.test(code)) {
     setStatus(joinResult, 'Party code must be exactly 6 letters/numbers.', 'error');
-    requestSection.classList.add('hidden');
+    hidePanel(requestSection);
     activePartyCode = null;
     return false;
   }
@@ -431,18 +473,18 @@ async function joinPartyByCode(code) {
 
     if (!data.djActive) {
       activePartyCode = null;
-      requestSection.classList.add('hidden');
+      hidePanel(requestSection);
       setStatus(joinResult, 'Party found, but DJ is not active yet. Ask DJ to open the DJ app.', 'info');
       return false;
     }
 
     activePartyCode = code;
-    requestSection.classList.remove('hidden');
+    revealPanel(requestSection);
     setStatus(joinResult, `Connected to party ${code}. You can send requests now.`, 'success');
     return true;
   } catch (error) {
     activePartyCode = null;
-    requestSection.classList.add('hidden');
+    hidePanel(requestSection);
     setStatus(joinResult, error.message || 'Unable to join party.', 'error');
     return false;
   }
@@ -522,6 +564,17 @@ appleSearchTermInput.addEventListener('keydown', (event) => {
 
 requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
   input.addEventListener('change', toggleAppleSearchVisibility);
+});
+
+authForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  submitAuth('login');
+});
+
+authEmailInput.addEventListener('blur', () => {
+  authEmailInput.value = String(authEmailInput.value || '')
+    .trim()
+    .toLowerCase();
 });
 
 refreshAuthIdentity();

@@ -3,10 +3,6 @@ const partyCodeInput = document.getElementById('partyCode');
 const djKeyInput = document.getElementById('djKey');
 const guestWebBaseInput = document.getElementById('guestWebBase');
 const deviceNameInput = document.getElementById('deviceName');
-const requestsDirInput = document.getElementById('requestsDir');
-const autoDownloadInput = document.getElementById('autoDownload');
-const downloadCommandInput = document.getElementById('downloadCommand');
-const cookieFilePathInput = document.getElementById('cookieFilePath');
 
 const saveBtn = document.getElementById('saveBtn');
 const connectBtn = document.getElementById('connectBtn');
@@ -18,6 +14,7 @@ const statusText = document.getElementById('statusText');
 const requestsList = document.getElementById('requestsList');
 const requestCount = document.getElementById('requestCount');
 const logList = document.getElementById('logList');
+
 const qrModal = document.getElementById('qrModal');
 const qrCloseBtn = document.getElementById('qrCloseBtn');
 const qrPartyCode = document.getElementById('qrPartyCode');
@@ -25,7 +22,7 @@ const qrImage = document.getElementById('qrImage');
 const qrUrl = document.getElementById('qrUrl');
 
 let unsubscribe = null;
-const requestEvents = [];
+let queueItems = [];
 
 function normalizePartyCode(value) {
   return String(value || '')
@@ -80,49 +77,119 @@ function appendLog(level, message, at) {
   }
 }
 
+function sanitizeQueueEntry(entry) {
+  const id = String(entry?.id || '').trim();
+  if (!id) return null;
+
+  const seqNo = Number.isFinite(Number(entry?.seqNo)) ? Number(entry.seqNo) : 0;
+
+  return {
+    id,
+    seqNo,
+    title: String(entry?.title || 'Untitled').trim() || 'Untitled',
+    artist: String(entry?.artist || 'Unknown').trim() || 'Unknown',
+    service: String(entry?.service || 'Unknown').trim() || 'Unknown',
+    appleMusicUrl: String(entry?.appleMusicUrl || '').trim(),
+    createdAt: String(entry?.createdAt || new Date().toISOString())
+  };
+}
+
+function sortQueue(items) {
+  items.sort((a, b) => {
+    if (a.seqNo && b.seqNo) return b.seqNo - a.seqNo;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+function setQueue(itemsInput) {
+  const map = new Map();
+
+  for (const raw of itemsInput) {
+    const entry = sanitizeQueueEntry(raw);
+    if (!entry) continue;
+    map.set(entry.id, entry);
+  }
+
+  queueItems = Array.from(map.values());
+  sortQueue(queueItems);
+  renderRequestList();
+}
+
+function addQueueItem(itemInput) {
+  const item = sanitizeQueueEntry(itemInput);
+  if (!item) return;
+
+  const existing = queueItems.findIndex((entry) => entry.id === item.id);
+  if (existing >= 0) {
+    queueItems[existing] = item;
+  } else {
+    queueItems.unshift(item);
+  }
+
+  sortQueue(queueItems);
+  renderRequestList();
+}
+
+function clearQueue() {
+  queueItems = [];
+  renderRequestList();
+}
+
 function renderRequestList() {
   requestsList.textContent = '';
-  requestCount.textContent = String(requestEvents.length);
+  requestCount.textContent = String(queueItems.length);
 
-  if (!requestEvents.length) {
+  if (!queueItems.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
-    empty.textContent = 'No requests saved yet.';
+    empty.textContent = 'No requests yet. Share QR and wait for guests to submit songs.';
     requestsList.appendChild(empty);
     return;
   }
 
-  for (const entry of requestEvents) {
+  for (const entry of queueItems) {
     const item = document.createElement('article');
     item.className = 'request-item';
 
+    const top = document.createElement('div');
+    top.className = 'request-top';
+
+    const seq = document.createElement('span');
+    seq.className = 'request-seq';
+    seq.textContent = entry.seqNo > 0 ? `#${entry.seqNo}` : '#?';
+
+    const service = document.createElement('span');
+    service.className = 'request-service';
+    service.textContent = entry.service;
+
+    top.append(seq, service);
+
     const title = document.createElement('p');
     title.className = 'request-title';
-    title.textContent = `#${entry.seqNo} ${entry.title} - ${entry.artist}`;
+    title.textContent = entry.title;
 
-    const sub = document.createElement('p');
-    sub.className = 'request-sub';
-    sub.textContent = `${nowLabel(entry.at)} • ${entry.folderPath}`;
+    const artist = document.createElement('p');
+    artist.className = 'request-artist';
+    artist.textContent = entry.artist;
 
-    item.append(title, sub);
+    const meta = document.createElement('p');
+    meta.className = 'request-sub';
+    meta.textContent = `Queued ${nowLabel(entry.createdAt)}`;
+
+    item.append(top, title, artist, meta);
+
+    if (entry.appleMusicUrl) {
+      const link = document.createElement('a');
+      link.className = 'request-link';
+      link.href = entry.appleMusicUrl;
+      link.target = '_blank';
+      link.rel = 'noreferrer noopener';
+      link.textContent = 'Open Song Link';
+      item.appendChild(link);
+    }
+
     requestsList.appendChild(item);
   }
-}
-
-function pushRequestEvent(payload) {
-  requestEvents.unshift({
-    seqNo: payload.request?.seqNo || '?',
-    title: payload.request?.title || 'Untitled',
-    artist: payload.request?.artist || 'Unknown',
-    folderPath: payload.folderPath || '',
-    at: payload.at
-  });
-
-  while (requestEvents.length > 80) {
-    requestEvents.pop();
-  }
-
-  renderRequestList();
 }
 
 function readFormConfig() {
@@ -131,11 +198,7 @@ function readFormConfig() {
     partyCode: normalizePartyCode(partyCodeInput.value),
     djKey: String(djKeyInput.value || '').trim(),
     guestWebBase: String(guestWebBaseInput.value || '').trim(),
-    deviceName: String(deviceNameInput.value || '').trim(),
-    requestsDir: String(requestsDirInput.value || '').trim(),
-    autoDownload: Boolean(autoDownloadInput.checked),
-    downloadCommand: String(downloadCommandInput.value || '').trim(),
-    cookieFilePath: String(cookieFilePathInput.value || '').trim()
+    deviceName: String(deviceNameInput.value || '').trim()
   };
 }
 
@@ -145,11 +208,6 @@ function writeFormConfig(config) {
   djKeyInput.value = config.djKey || '';
   guestWebBaseInput.value = config.guestWebBase || '';
   deviceNameInput.value = config.deviceName || '';
-  requestsDirInput.value = config.requestsDir || '';
-  autoDownloadInput.checked = Boolean(config.autoDownload);
-  downloadCommandInput.value = config.downloadCommand || '';
-  cookieFilePathInput.value = config.cookieFilePath || '';
-  syncAutoDownloadInputs();
 }
 
 function setQrVisible(visible) {
@@ -162,14 +220,8 @@ function setQrVisible(visible) {
   }
 }
 
-function syncAutoDownloadInputs() {
-  const enabled = Boolean(autoDownloadInput.checked);
-  downloadCommandInput.disabled = !enabled;
-  cookieFilePathInput.disabled = !enabled;
-}
-
 async function initialize() {
-  renderRequestList();
+  clearQueue();
   setStatus('idle', 'Loading settings...');
 
   const config = await window.djApi.loadConfig();
@@ -189,8 +241,18 @@ async function initialize() {
       return;
     }
 
-    if (event.type === 'request-saved') {
-      pushRequestEvent(event);
+    if (event.type === 'queue:clear') {
+      clearQueue();
+      return;
+    }
+
+    if (event.type === 'queue:replace') {
+      setQueue(Array.isArray(event.requests) ? event.requests : []);
+      return;
+    }
+
+    if (event.type === 'queue:add') {
+      addQueueItem(event.request);
     }
   });
 }
@@ -198,8 +260,6 @@ async function initialize() {
 partyCodeInput.addEventListener('input', () => {
   partyCodeInput.value = normalizePartyCode(partyCodeInput.value);
 });
-
-autoDownloadInput.addEventListener('change', syncAutoDownloadInputs);
 
 saveBtn.addEventListener('click', async () => {
   try {
@@ -215,8 +275,8 @@ connectBtn.addEventListener('click', async () => {
   connectBtn.disabled = true;
   try {
     setStatus('connecting', 'Connecting to party...');
-    await window.djApi.connect(readFormConfig());
-    appendLog('success', 'DJ listener connected.', new Date().toISOString());
+    const result = await window.djApi.connect(readFormConfig());
+    appendLog('success', `DJ listener connected for ${result.partyCode}.`, new Date().toISOString());
   } catch (error) {
     setStatus('error', error.message || 'Connection failed');
     appendLog('error', error.message || 'Connection failed.', new Date().toISOString());

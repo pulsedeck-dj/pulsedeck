@@ -3,7 +3,7 @@
 PulseDeck is a full party request platform:
 - Web app for DJ auth, party creation, guest join, and Apple Music song requests
 - Node + Socket.IO API with Postgres + Prisma persistence
-- macOS Electron DJ desktop app that receives requests in realtime and saves them to Desktop
+- macOS Electron DJ desktop app that receives requests in realtime with a live queue UI
 
 ## Monorepo Apps
 - `apps/server`: Express, Prisma, Postgres, Socket.IO
@@ -17,7 +17,7 @@ PulseDeck is a full party request platform:
 - Realtime request delivery to DJ desktop app
 - Apple Music search endpoint for web picker
 - Idempotent request submission (`X-Idempotency-Key`)
-- Optional auto-download command in DJ app for Apple Music URLs
+- DJ queue dashboard with activity log and guest QR modal
 
 ## Requirements
 - Node.js 20+
@@ -112,38 +112,6 @@ In the DJ desktop app:
 
 The QR opens the web page with `partyCode` prefilled in URL.
 
-## DJ Auto-Download Command (Optional)
-
-In DJ app settings, enable **Auto-download Apple Music requests** and set a command template.
-
-Available placeholders:
-- `{{url}}`
-- `{{outputDir}}`
-- `{{cookieFile}}`
-- `{{title}}`
-- `{{artist}}`
-- `{{seqNo}}`
-
-Example template:
-```bash
-gamdl --cookie-file {{cookieFile}} --output {{outputDir}} {{url}}
-```
-
-The app also exposes env vars to the command:
-- `PULSE_URL`
-- `PULSE_OUTPUT_DIR`
-- `PULSE_COOKIE_FILE`
-- `PULSE_TITLE`
-- `PULSE_ARTIST`
-- `PULSE_SEQ_NO`
-- `PULSE_SERVICE`
-- `PULSE_PARTY_CODE`
-
-For each request folder, the app writes:
-- `request.json`
-- `song-url.txt`
-- `download.log` or `download-error.log` (if auto-download is enabled)
-
 ## Scripts
 From repo root:
 
@@ -170,4 +138,4 @@ From repo root:
 
 ## Notes
 - Apple Music search requires a valid Apple Music developer token.
-- This system stores metadata and URLs; make sure your download workflow complies with local law and platform terms.
+- This system stores request metadata and song URLs.

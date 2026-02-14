@@ -1,24 +1,20 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const axios = require('axios');
-const { spawn } = require('child_process');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const QRCode = require('qrcode');
 const { io } = require('socket.io-client');
 
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const DEFAULT_GUEST_WEB_BASE = 'https://pulsedeck-dj.github.io/pulsedeck/';
+const HEARTBEAT_INTERVAL_MS = 10000;
+
 const DEFAULT_CONFIG = {
   apiBase: 'http://localhost:4000',
   partyCode: '',
   djKey: '',
   guestWebBase: DEFAULT_GUEST_WEB_BASE,
-  deviceName: 'DJ-Macbook',
-  requestsDir: path.join(os.homedir(), 'Desktop', 'Requests'),
-  autoDownload: false,
-  downloadCommand: '',
-  cookieFilePath: ''
+  deviceName: 'DJ-Macbook'
 };
 
 let mainWindow = null;
@@ -43,10 +39,6 @@ function sanitizeText(value, maxLength) {
     .slice(0, maxLength);
 }
 
-function sanitizeName(value) {
-  return sanitizeText(value, 120).replace(/[\\/:*?"<>|]/g, '');
-}
-
 function sanitizeWebUrl(value, fallback = DEFAULT_GUEST_WEB_BASE) {
   const candidate = sanitizeText(value || fallback, 400);
   try {
@@ -58,16 +50,6 @@ function sanitizeWebUrl(value, fallback = DEFAULT_GUEST_WEB_BASE) {
   } catch {
     return fallback;
   }
-}
-
-function sanitizeBoolean(value) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
-  }
-  return false;
 }
 
 function emit(event) {
@@ -114,11 +96,7 @@ function loadConfig() {
     partyCode: normalizePartyCode(parsed.partyCode || ''),
     djKey: sanitizeText(parsed.djKey || '', 80),
     guestWebBase: sanitizeWebUrl(parsed.guestWebBase || DEFAULT_CONFIG.guestWebBase),
-    deviceName: sanitizeText(parsed.deviceName || DEFAULT_CONFIG.deviceName, 80) || DEFAULT_CONFIG.deviceName,
-    requestsDir: sanitizeText(parsed.requestsDir || DEFAULT_CONFIG.requestsDir, 300) || DEFAULT_CONFIG.requestsDir,
-    autoDownload: sanitizeBoolean(parsed.autoDownload),
-    downloadCommand: String(parsed.downloadCommand || '').trim().slice(0, 1000),
-    cookieFilePath: sanitizeText(parsed.cookieFilePath || '', 400)
+    deviceName: sanitizeText(parsed.deviceName || DEFAULT_CONFIG.deviceName, 80) || DEFAULT_CONFIG.deviceName
   };
 }
 
@@ -128,63 +106,13 @@ function saveConfig(input) {
     partyCode: normalizePartyCode(input?.partyCode || ''),
     djKey: sanitizeText(input?.djKey || '', 80),
     guestWebBase: sanitizeWebUrl(input?.guestWebBase || DEFAULT_CONFIG.guestWebBase),
-    deviceName: sanitizeText(input?.deviceName || DEFAULT_CONFIG.deviceName, 80) || DEFAULT_CONFIG.deviceName,
-    requestsDir: sanitizeText(input?.requestsDir || DEFAULT_CONFIG.requestsDir, 300) || DEFAULT_CONFIG.requestsDir,
-    autoDownload: sanitizeBoolean(input?.autoDownload),
-    downloadCommand: String(input?.downloadCommand || '').trim().slice(0, 1000),
-    cookieFilePath: sanitizeText(input?.cookieFilePath || '', 400)
+    deviceName: sanitizeText(input?.deviceName || DEFAULT_CONFIG.deviceName, 80) || DEFAULT_CONFIG.deviceName
   };
 
   const filePath = configPath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf-8');
   return normalized;
-}
-
-function ensureRequestsDir(requestsDir) {
-  if (!fs.existsSync(requestsDir)) {
-    fs.mkdirSync(requestsDir, { recursive: true });
-  }
-}
-
-function processedStorePath(requestsDir) {
-  return path.join(requestsDir, '.processed.json');
-}
-
-function loadProcessedIds(requestsDir) {
-  ensureRequestsDir(requestsDir);
-  const filePath = processedStorePath(requestsDir);
-  if (!fs.existsSync(filePath)) return new Set();
-
-  const parsed = safeParseJson(fs.readFileSync(filePath, 'utf-8'), { ids: [] });
-  if (!Array.isArray(parsed.ids)) return new Set();
-  return new Set(parsed.ids.map((entry) => String(entry)));
-}
-
-function saveProcessedIds(requestsDir, processedIds) {
-  const filePath = processedStorePath(requestsDir);
-  fs.writeFileSync(filePath, JSON.stringify({ ids: Array.from(processedIds) }, null, 2), 'utf-8');
-}
-
-function buildFolderName(seqNo, title) {
-  const safeTitle = sanitizeName(title) || 'Untitled Request';
-  return `#${seqNo} - ${safeTitle}`;
-}
-
-function uniqueFolderPath(baseDir, folderName) {
-  let candidate = path.join(baseDir, folderName);
-  if (!fs.existsSync(candidate)) return candidate;
-
-  let index = 2;
-  while (true) {
-    candidate = path.join(baseDir, `${folderName} (${index})`);
-    if (!fs.existsSync(candidate)) return candidate;
-    index += 1;
-  }
-}
-
-function shellEscape(value) {
-  return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
 }
 
 function buildGuestJoinUrl(guestWebBaseInput, partyCodeInput) {
@@ -207,6 +135,7 @@ function buildGuestJoinUrl(guestWebBaseInput, partyCodeInput) {
 async function buildGuestQr(payload) {
   const config = loadConfig();
   const info = buildGuestJoinUrl(payload?.guestWebBase || config.guestWebBase, payload?.partyCode || config.partyCode);
+
   const qrDataUrl = await QRCode.toDataURL(info.url, {
     errorCorrectionLevel: 'M',
     margin: 1,
@@ -225,199 +154,80 @@ async function buildGuestQr(payload) {
   };
 }
 
-function renderDownloadCommand(templateInput, variables) {
-  let template = String(templateInput || '').trim();
-  if (!template) return '';
+function sanitizeQueueRequest(request, fallbackPartyCode) {
+  const id = sanitizeText(request?.id, 128);
+  if (!id) return null;
 
-  for (const [key, value] of Object.entries(variables)) {
-    template = template.replaceAll(`{{${key}}}`, shellEscape(value));
+  const parsedSeqNo = Number(request?.seqNo);
+  const seqNo = Number.isFinite(parsedSeqNo) && parsedSeqNo > 0 ? Math.floor(parsedSeqNo) : 0;
+
+  let createdAt = new Date().toISOString();
+  if (request?.createdAt) {
+    const date = new Date(request.createdAt);
+    if (!Number.isNaN(date.getTime())) {
+      createdAt = date.toISOString();
+    }
   }
 
-  return template;
+  return {
+    id,
+    seqNo,
+    partyCode: sanitizeText(request?.partyCode || fallbackPartyCode, 12),
+    title: sanitizeText(request?.title, 120) || 'Untitled',
+    artist: sanitizeText(request?.artist, 120) || 'Unknown',
+    service: sanitizeText(request?.service, 30) || 'Unknown',
+    appleMusicUrl: sanitizeText(request?.appleMusicUrl, 500),
+    createdAt
+  };
 }
 
-function runShellCommand(command, cwd, env) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd,
-      env: {
-        ...process.env,
-        ...env
-      },
-      shell: true,
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
+function emitQueueReplace(connection, requestsInput) {
+  const list = [];
+  const seen = new Set();
 
-    let stdout = '';
-    let stderr = '';
+  for (const entry of requestsInput) {
+    const request = sanitizeQueueRequest(entry, connection.partyCode);
+    if (!request) continue;
+    if (seen.has(request.id)) continue;
+    seen.add(request.id);
+    list.push(request);
+  }
 
-    child.stdout.on('data', (chunk) => {
-      stdout += String(chunk);
-      if (stdout.length > 20000) stdout = stdout.slice(-20000);
-    });
-
-    child.stderr.on('data', (chunk) => {
-      stderr += String(chunk);
-      if (stderr.length > 20000) stderr = stderr.slice(-20000);
-    });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ code, stdout, stderr });
-        return;
-      }
-
-      const error = new Error(`Command exited with code ${code}`);
-      error.code = code;
-      error.stdout = stdout;
-      error.stderr = stderr;
-      reject(error);
-    });
+  list.sort((a, b) => {
+    if (a.seqNo && b.seqNo) return a.seqNo - b.seqNo;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
-}
 
-function shouldAttemptAutoDownload(connection, request) {
-  if (!connection.autoDownload) return { ok: false, reason: '' };
-  if (request.service !== 'Apple Music') {
-    return {
-      ok: false,
-      level: 'info',
-      reason: 'Auto-download skipped (service is not Apple Music).'
-    };
-  }
-  if (!sanitizeText(request.appleMusicUrl, 500)) {
-    return {
-      ok: false,
-      level: 'warning',
-      reason: 'Auto-download skipped (Apple Music URL missing).'
-    };
-  }
-  if (!connection.downloadCommand) {
-    return {
-      ok: false,
-      level: 'warning',
-      reason: 'Auto-download is enabled but command template is empty.'
-    };
-  }
-  return { ok: true, reason: '', level: 'info' };
-}
-
-async function runAutoDownload(connection, request, folderPath) {
-  const check = shouldAttemptAutoDownload(connection, request);
-  if (!check.ok) {
-    if (check.reason) log(check.level || 'warning', check.reason);
-    return;
-  }
-
-  const variables = {
-    url: sanitizeText(request.appleMusicUrl, 500),
-    outputDir: folderPath,
-    cookieFile: connection.cookieFilePath,
-    title: sanitizeText(request.title, 120),
-    artist: sanitizeText(request.artist, 120),
-    seqNo: String(request.seqNo || ''),
-    service: sanitizeText(request.service, 30),
-    partyCode: connection.partyCode
-  };
-
-  const command = renderDownloadCommand(connection.downloadCommand, variables);
-  if (!command) {
-    log('warning', 'Download command template resolved to an empty command.');
-    return;
-  }
-
-  const env = {
-    PULSE_URL: variables.url,
-    PULSE_OUTPUT_DIR: variables.outputDir,
-    PULSE_COOKIE_FILE: variables.cookieFile,
-    PULSE_TITLE: variables.title,
-    PULSE_ARTIST: variables.artist,
-    PULSE_SEQ_NO: variables.seqNo,
-    PULSE_SERVICE: variables.service,
-    PULSE_PARTY_CODE: variables.partyCode
-  };
-
-  log('info', `Running auto-download for #${variables.seqNo || '?'}...`);
-
-  try {
-    const result = await runShellCommand(command, folderPath, env);
-    const output = [
-      `timestamp=${new Date().toISOString()}`,
-      `command=${command}`,
-      '',
-      '[stdout]',
-      result.stdout || '(none)',
-      '',
-      '[stderr]',
-      result.stderr || '(none)'
-    ].join('\n');
-
-    fs.writeFileSync(path.join(folderPath, 'download.log'), output, 'utf-8');
-    log('success', `Auto-download completed for #${variables.seqNo || '?'}.`);
-  } catch (error) {
-    const output = [
-      `timestamp=${new Date().toISOString()}`,
-      `command=${command}`,
-      `error=${error.message}`,
-      '',
-      '[stdout]',
-      error.stdout || '(none)',
-      '',
-      '[stderr]',
-      error.stderr || '(none)'
-    ].join('\n');
-
-    fs.writeFileSync(path.join(folderPath, 'download-error.log'), output, 'utf-8');
-    log('error', `Auto-download failed for #${variables.seqNo || '?'}: ${error.message}`);
-  }
-}
-
-function persistRequest(connection, request) {
-  const requestId = String(request?.id || '');
-  if (!requestId || connection.processedIds.has(requestId)) return;
-
-  const seqNo = Number.isInteger(request.seqNo) && request.seqNo > 0 ? request.seqNo : Date.now();
-  const folderPath = uniqueFolderPath(connection.requestsDir, buildFolderName(seqNo, request.title));
-
-  fs.mkdirSync(folderPath, { recursive: true });
-  fs.writeFileSync(
-    path.join(folderPath, 'request.json'),
-    JSON.stringify(
-      {
-        receivedAt: new Date().toISOString(),
-        ...request
-      },
-      null,
-      2
-    ),
-    'utf-8'
-  );
-  fs.writeFileSync(path.join(folderPath, 'song-url.txt'), request.appleMusicUrl || 'No URL provided', 'utf-8');
-
-  connection.processedIds.add(requestId);
-  saveProcessedIds(connection.requestsDir, connection.processedIds);
+  connection.requestIds = new Set(list.map((entry) => entry.id));
 
   emit({
-    type: 'request-saved',
-    request,
-    folderPath,
+    type: 'queue:replace',
+    requests: list,
     at: new Date().toISOString()
   });
 
-  log('success', `Saved #${seqNo}: ${request.title} - ${request.artist}`);
-
-  connection.downloadChain = connection.downloadChain
-    .then(() => runAutoDownload(connection, request, folderPath))
-    .catch((error) => {
-      log('error', `Auto-download queue error: ${error.message}`);
-    });
+  return list;
 }
 
-async function syncMissedRequests(connection) {
+function emitQueueAdd(connection, requestInput, source = 'realtime') {
+  const request = sanitizeQueueRequest(requestInput, connection.partyCode);
+  if (!request) return null;
+  if (connection.requestIds.has(request.id)) return null;
+
+  connection.requestIds.add(request.id);
+
+  emit({
+    type: 'queue:add',
+    source,
+    request,
+    at: new Date().toISOString()
+  });
+
+  log('success', `Queued #${request.seqNo || '?'}: ${request.title} - ${request.artist}`);
+  return request;
+}
+
+async function syncQueue(connection) {
   const response = await axios.get(`${connection.apiBase}/api/parties/${connection.partyCode}/requests`, {
     headers: {
       'X-DJ-Session-ID': connection.sessionId,
@@ -427,13 +237,8 @@ async function syncMissedRequests(connection) {
   });
 
   const requests = Array.isArray(response.data) ? response.data : [];
-  requests.sort((a, b) => Number(a.seqNo) - Number(b.seqNo));
-
-  for (const request of requests) {
-    persistRequest(connection, request);
-  }
-
-  log('info', `Synced ${requests.length} request(s).`);
+  const replaced = emitQueueReplace(connection, requests);
+  log('info', `Queue synced (${replaced.length} request(s)).`);
 }
 
 async function disconnectDj(reason = 'Disconnected') {
@@ -452,6 +257,7 @@ async function disconnectDj(reason = 'Disconnected') {
   }
 
   liveConnection = null;
+  emit({ type: 'queue:clear', at: new Date().toISOString() });
   setStatus('idle', reason);
   log('info', reason);
   return { ok: true };
@@ -473,7 +279,9 @@ async function connectDj(configInput) {
     }
 
     const apiBase = config.apiBase.replace(/\/+$/, '');
-    ensureRequestsDir(config.requestsDir);
+    if (!/^https?:\/\//.test(apiBase)) {
+      throw new Error('API Base URL must start with http:// or https://');
+    }
 
     setStatus('connecting', 'Claiming DJ role...');
     log('info', `Claiming DJ role for ${partyCode}...`);
@@ -495,28 +303,18 @@ async function connectDj(configInput) {
       sessionId: claim.data.sessionId,
       token: claim.data.token,
       expiresAt: claim.data.expiresAt,
-      requestsDir: config.requestsDir,
-      processedIds: loadProcessedIds(config.requestsDir),
-      autoDownload: config.autoDownload,
-      downloadCommand: config.downloadCommand,
-      cookieFilePath: config.cookieFilePath,
-      downloadChain: Promise.resolve(),
+      requestIds: new Set(),
       socket: null,
       heartbeatTimer: null
     };
 
     liveConnection = connection;
+    emit({ type: 'queue:clear', at: new Date().toISOString() });
 
     setStatus('connecting', `Session ${connection.sessionId.slice(0, 8)} established`);
     log('success', `DJ role claimed. Party expires at ${connection.expiresAt}`);
-    if (connection.autoDownload) {
-      log('info', 'Auto-download is enabled for new Apple Music requests.');
-      if (connection.downloadCommand.includes('{{cookieFile}}') && !connection.cookieFilePath) {
-        log('warning', 'Command uses {{cookieFile}} but Cookie File Path is empty.');
-      }
-    }
 
-    await syncMissedRequests(connection);
+    await syncQueue(connection);
 
     const socket = io(apiBase, {
       transports: ['websocket'],
@@ -536,11 +334,11 @@ async function connectDj(configInput) {
     });
 
     socket.on('register_ok', async () => {
-      setStatus('connected', `Listening for ${connection.partyCode} requests`);
+      setStatus('connected', `Live queue ready for party ${connection.partyCode}`);
       log('success', `Realtime connected for party ${connection.partyCode}`);
 
       try {
-        await syncMissedRequests(connection);
+        await syncQueue(connection);
       } catch (error) {
         log('warning', `Sync warning: ${error.response?.data?.error || error.message}`);
       }
@@ -552,7 +350,7 @@ async function connectDj(configInput) {
     });
 
     socket.on('request:new', (request) => {
-      persistRequest(connection, request);
+      emitQueueAdd(connection, request, 'realtime');
     });
 
     socket.on('disconnect', () => {
@@ -577,12 +375,12 @@ async function connectDj(configInput) {
       } catch (error) {
         log('warning', `Heartbeat warning: ${error.response?.data?.error || error.message}`);
       }
-    }, 10000);
+    }, HEARTBEAT_INTERVAL_MS);
 
     return {
       ok: true,
       partyCode: connection.partyCode,
-      requestsDir: connection.requestsDir
+      queueSize: connection.requestIds.size
     };
   } catch (error) {
     await disconnectDj('Connection failed');
@@ -592,10 +390,10 @@ async function connectDj(configInput) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1080,
-    height: 760,
-    minWidth: 900,
-    minHeight: 640,
+    width: 1180,
+    height: 820,
+    minWidth: 980,
+    minHeight: 680,
     title: 'PulseDeck DJ',
     webPreferences: {
       contextIsolation: true,

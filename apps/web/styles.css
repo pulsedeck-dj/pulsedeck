@@ -435,6 +435,10 @@ input#partyCode {
   animation: reveal 0.7s ease forwards;
 }
 
+.panel-pop {
+  animation: panelPop 0.28s ease both;
+}
+
 .delay-1 {
   animation-delay: 0.08s;
 }
@@ -451,6 +455,17 @@ input#partyCode {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes panelPop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

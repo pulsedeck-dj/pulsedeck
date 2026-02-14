@@ -19,8 +19,8 @@
     <main class="layout">
       <header class="hero">
         <p class="eyebrow">PulseDeck DJ Desktop</p>
-        <h1>Live DJ Control</h1>
-        <p class="subtitle">Claim your party, receive requests instantly, and auto-save them to Desktop.</p>
+        <h1>Live Request Queue</h1>
+        <p class="subtitle">Connect as DJ, monitor song requests in realtime, and share a QR to your party page.</p>
       </header>
 
       <section class="panel panel-form">
@@ -44,20 +44,6 @@
 
           <label for="deviceName">Device Name</label>
           <input id="deviceName" />
-
-          <label for="requestsDir">Requests Folder</label>
-          <input id="requestsDir" />
-
-          <label class="check-row" for="autoDownload">
-            <input id="autoDownload" type="checkbox" />
-            <span>Auto-download Apple Music requests</span>
-          </label>
-
-          <label for="downloadCommand">Download Command Template</label>
-          <input id="downloadCommand" type="text" placeholder='gamdl --cookie-file {{cookieFile}} --output {{outputDir}} {{url}}' />
-
-          <label for="cookieFilePath">Cookie File Path (optional)</label>
-          <input id="cookieFilePath" type="text" placeholder="/Users/you/apple-music-cookie.txt" />
         </div>
 
         <div class="button-row">
@@ -68,15 +54,12 @@
         </div>
 
         <p id="statusText" class="status-text">Not connected.</p>
-        <p class="status-tip">
-          Command placeholders: <code>{{url}}</code>, <code>{{outputDir}}</code>, <code>{{cookieFile}}</code>, <code>{{title}}</code>, <code>{{artist}}</code>, <code>{{seqNo}}</code>
-        </p>
       </section>
 
       <section class="grid-two">
         <article class="panel">
           <div class="panel-head">
-            <h2>Recent Requests</h2>
+            <h2>Song Queue</h2>
             <span id="requestCount" class="count-pill">0</span>
           </div>
           <div id="requestsList" class="requests-list"></div>
@@ -99,7 +82,7 @@
           <button id="qrCloseBtn" class="btn btn-ghost qr-close">Close</button>
           <p class="eyebrow">Guest Join Portal</p>
           <h2 id="qrPartyCode" class="qr-party-code">------</h2>
-          <p class="qr-subtitle">Scan this QR code to open the request page with party code prefilled.</p>
+          <p class="qr-subtitle">Scan this QR to open the request page with the party code already filled in.</p>
           <img id="qrImage" class="qr-image" alt="Guest QR code" />
           <p id="qrUrl" class="qr-url"></p>
         </section>
