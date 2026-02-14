@@ -127,6 +127,14 @@
               <summary>Advanced: Paste Song Link (Optional)</summary>
               <label for="songUrl" class="advanced-label">Song URL</label>
               <input id="songUrl" maxlength="500" placeholder="https://music.apple.com/..." />
+              <div class="link-tools">
+                <button id="songUrlAutofillBtn" class="btn btn-ghost btn-mini" type="button">
+                  Autofill From Link
+                </button>
+              </div>
+              <p id="songUrlAutofillStatus" class="status status-neutral" aria-live="polite">
+                Paste a link and tap Autofill to pull title + artist.
+              </p>
             </details>
 
             <button type="submit" class="btn btn-primary">Submit Request</button>

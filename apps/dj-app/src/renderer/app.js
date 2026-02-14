@@ -15,11 +15,13 @@ const jumpRequestsBtn = document.getElementById('jumpRequestsBtn');
 const clearLogBtn = document.getElementById('clearLogBtn');
 
 const tabBoothBtn = document.getElementById('tabBoothBtn');
+const tabStageBtn = document.getElementById('tabStageBtn');
 const tabRequestsBtn = document.getElementById('tabRequestsBtn');
 const tabPlayedBtn = document.getElementById('tabPlayedBtn');
 const tabShareBtn = document.getElementById('tabShareBtn');
 
 const boothWindow = document.getElementById('boothWindow');
+const stageWindow = document.getElementById('stageWindow');
 const requestsWindow = document.getElementById('requestsWindow');
 const playedWindow = document.getElementById('playedWindow');
 const shareWindow = document.getElementById('shareWindow');
@@ -36,6 +38,17 @@ const playedFilterInput = document.getElementById('playedFilter');
 const playedCount = document.getElementById('playedCount');
 const playedCountTab = document.getElementById('playedCountTab');
 const logList = document.getElementById('logList');
+
+const stageSeq = document.getElementById('stageSeq');
+const stageService = document.getElementById('stageService');
+const stageTitle = document.getElementById('stageTitle');
+const stageArtist = document.getElementById('stageArtist');
+const stageMeta = document.getElementById('stageMeta');
+const stageMarkPlayedBtn = document.getElementById('stageMarkPlayedBtn');
+const stageOpenLinkBtn = document.getElementById('stageOpenLinkBtn');
+const stageCopyBtn = document.getElementById('stageCopyBtn');
+const stagePreviewCount = document.getElementById('stagePreviewCount');
+const stagePreviewList = document.getElementById('stagePreviewList');
 
 const sharePartyCode = document.getElementById('sharePartyCode');
 const shareGuestUrl = document.getElementById('shareGuestUrl');
@@ -77,26 +90,30 @@ function setWindow(windowName) {
   activeWindow = windowName;
 
   const isBooth = windowName === 'booth';
+  const isStage = windowName === 'stage';
   const isRequests = windowName === 'requests';
   const isPlayed = windowName === 'played';
   const isShare = windowName === 'share';
 
   boothWindow.classList.toggle('hidden', !isBooth);
+  stageWindow.classList.toggle('hidden', !isStage);
   requestsWindow.classList.toggle('hidden', !isRequests);
   playedWindow.classList.toggle('hidden', !isPlayed);
   shareWindow.classList.toggle('hidden', !isShare);
 
   boothWindow.classList.toggle('is-active', isBooth);
+  stageWindow.classList.toggle('is-active', isStage);
   requestsWindow.classList.toggle('is-active', isRequests);
   playedWindow.classList.toggle('is-active', isPlayed);
   shareWindow.classList.toggle('is-active', isShare);
 
   tabBoothBtn.classList.toggle('is-active', isBooth);
+  tabStageBtn.classList.toggle('is-active', isStage);
   tabRequestsBtn.classList.toggle('is-active', isRequests);
   tabPlayedBtn.classList.toggle('is-active', isPlayed);
   tabShareBtn.classList.toggle('is-active', isShare);
 
-  if (isRequests) {
+  if (isRequests || isStage) {
     tabRequestsBtn.classList.remove('has-alert');
   }
 }
@@ -171,6 +188,7 @@ function setQueueOrder(nextOrder) {
   sortQueue(queueItems);
   renderRequestList();
   renderPlayedList();
+  renderStage();
 }
 
 function sanitizeQueueEntry(entry) {
@@ -233,6 +251,7 @@ function setQueue(itemsInput) {
   sortQueue(queueItems);
   renderRequestList();
   renderPlayedList();
+  renderStage();
 }
 
 function addQueueItem(itemInput) {
@@ -249,8 +268,9 @@ function addQueueItem(itemInput) {
   sortQueue(queueItems);
   renderRequestList();
   renderPlayedList();
+  renderStage();
 
-  if (activeWindow !== 'requests' && existing < 0 && item.status === 'queued') {
+  if (activeWindow !== 'requests' && activeWindow !== 'stage' && existing < 0 && item.status === 'queued') {
     tabRequestsBtn.classList.add('has-alert');
   }
 }
@@ -259,6 +279,7 @@ function clearQueue() {
   queueItems = [];
   renderRequestList();
   renderPlayedList();
+  renderStage();
   tabRequestsBtn.classList.remove('has-alert');
 }
 
@@ -511,6 +532,104 @@ function renderPlayedList() {
   }
 }
 
+function renderStagePreview(entries) {
+  if (!stagePreviewList) return;
+
+  stagePreviewList.textContent = '';
+  stagePreviewCount.textContent = String(entries.length);
+
+  if (!entries.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'Nothing else queued right now.';
+    stagePreviewList.appendChild(empty);
+    return;
+  }
+
+  for (const entry of entries) {
+    const item = document.createElement('article');
+    item.className = 'request-item';
+
+    const top = document.createElement('div');
+    top.className = 'request-top';
+
+    const seq = document.createElement('span');
+    seq.className = 'request-seq';
+    seq.textContent = entry.seqNo > 0 ? `#${entry.seqNo}` : '#?';
+
+    const service = document.createElement('span');
+    service.className = 'request-service';
+    service.textContent = entry.service;
+
+    top.append(seq, service);
+
+    const title = document.createElement('p');
+    title.className = 'request-title';
+    title.textContent = entry.title;
+
+    const artist = document.createElement('p');
+    artist.className = 'request-artist';
+    artist.textContent = entry.artist;
+
+    const meta = document.createElement('p');
+    meta.className = 'request-sub';
+    meta.textContent = `Queued ${nowLabel(entry.createdAt)}`;
+
+    item.append(top, title, artist, meta);
+    stagePreviewList.appendChild(item);
+  }
+}
+
+function renderStage() {
+  if (!stageTitle || !stageArtist || !stageService || !stageSeq) return;
+
+  const queued = queueItems.filter((entry) => entry.status !== 'played');
+
+  const current = queued[0] || null;
+  if (!current) {
+    stageSeq.textContent = '--';
+    stageService.textContent = 'No queued songs yet.';
+    stageTitle.textContent = 'Waiting for guests...';
+    stageArtist.textContent = 'Share your QR and let the requests roll in.';
+    stageMeta.textContent = '';
+
+    if (stageMarkPlayedBtn) stageMarkPlayedBtn.disabled = true;
+    if (stageOpenLinkBtn) stageOpenLinkBtn.classList.add('hidden');
+    if (stageCopyBtn) stageCopyBtn.classList.add('hidden');
+
+    renderStagePreview([]);
+    return;
+  }
+
+  stageSeq.textContent = current.seqNo > 0 ? `#${current.seqNo}` : '#?';
+  stageService.textContent = current.service;
+  stageTitle.textContent = current.title;
+  stageArtist.textContent = current.artist;
+  stageMeta.textContent = `Queued ${nowLabel(current.createdAt)}`;
+
+  if (stageMarkPlayedBtn) {
+    stageMarkPlayedBtn.disabled = false;
+    stageMarkPlayedBtn.onclick = () => markRequestPlayed(current.id, stageMarkPlayedBtn);
+  }
+
+  if (stageCopyBtn) {
+    stageCopyBtn.classList.remove('hidden');
+    stageCopyBtn.onclick = () => copySongSummary(current);
+  }
+
+  if (stageOpenLinkBtn) {
+    if (current.songUrl) {
+      stageOpenLinkBtn.href = current.songUrl;
+      stageOpenLinkBtn.classList.remove('hidden');
+    } else {
+      stageOpenLinkBtn.removeAttribute('href');
+      stageOpenLinkBtn.classList.add('hidden');
+    }
+  }
+
+  renderStagePreview(queued.slice(1, 6));
+}
+
 function readFormConfig() {
   return {
     apiBase: String(apiBaseInput.value || '').trim(),
@@ -693,6 +812,11 @@ tabBoothBtn.addEventListener('click', () => {
   setWindow('booth');
 });
 
+tabStageBtn.addEventListener('click', () => {
+  renderStage();
+  setWindow('stage');
+});
+
 tabRequestsBtn.addEventListener('click', () => {
   setWindow('requests');
 });
@@ -750,7 +874,8 @@ connectBtn.addEventListener('click', async () => {
     setStatus('connecting', 'Connecting to party...');
     const result = await window.djApi.connect(readFormConfig());
     appendLog('success', `DJ listener connected for ${result.partyCode}.`, new Date().toISOString());
-    setWindow('requests');
+    renderStage();
+    setWindow('stage');
   } catch (error) {
     setStatus('error', error.message || 'Connection failed');
     appendLog('error', error.message || 'Connection failed.', new Date().toISOString());

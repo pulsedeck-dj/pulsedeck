@@ -96,6 +96,8 @@ const appleSearchStatus = document.getElementById('appleSearchStatus');
 const appleSearchResults = document.getElementById('appleSearchResults');
 const songUrlInput = document.getElementById('songUrl');
 const songUrlSummary = document.querySelector('.advanced-link-block summary');
+const songUrlAutofillBtn = document.getElementById('songUrlAutofillBtn');
+const songUrlAutofillStatus = document.getElementById('songUrlAutofillStatus');
 
 const guestPartyCodeOut = document.getElementById('guestPartyCodeOut');
 const guestRequestCountOut = document.getElementById('guestRequestCountOut');
@@ -156,6 +158,11 @@ function setStatus(element, text, type = 'neutral') {
   element.classList.remove('status-neutral', 'status-info', 'status-success', 'status-error');
   element.classList.add(`status-${type}`);
   element.textContent = text;
+}
+
+function setSongUrlAutofillStatus(text, type = 'neutral') {
+  if (!songUrlAutofillStatus) return;
+  setStatus(songUrlAutofillStatus, text, type);
 }
 
 function setButtonLoading(button, loading, loadingLabel, idleLabel) {
@@ -705,15 +712,19 @@ function updateSongUrlUi() {
   if (service === 'Apple Music') {
     songUrlInput.placeholder = 'https://music.apple.com/...';
     if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Apple Music Link (Optional)';
+    setSongUrlAutofillStatus('Paste an Apple Music link and tap Autofill, or use Search to pick a song.', 'neutral');
   } else if (service === 'Spotify') {
     songUrlInput.placeholder = 'https://open.spotify.com/track/...';
     if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Spotify Link (Optional)';
+    setSongUrlAutofillStatus('Paste a Spotify track link and tap Autofill to pull title + artist.', 'neutral');
   } else if (service === 'YouTube') {
     songUrlInput.placeholder = 'https://youtu.be/...';
     if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste YouTube Link (Optional)';
+    setSongUrlAutofillStatus('Paste a YouTube link and tap Autofill to pull title + channel.', 'neutral');
   } else {
     songUrlInput.placeholder = 'https://...';
     if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Song Link (Optional)';
+    setSongUrlAutofillStatus('Paste a link and tap Autofill to pull song details.', 'neutral');
   }
 
   const current = String(songUrlInput.value || '').trim();
@@ -1293,6 +1304,49 @@ requestForm.addEventListener('submit', async (event) => {
     songUrl: String(document.getElementById('songUrl').value || '')
   });
 });
+
+if (songUrlAutofillBtn) {
+  songUrlAutofillBtn.addEventListener('click', async () => {
+    const service = readSelectedService();
+    const url = String(songUrlInput?.value || '').trim();
+
+    if (!url) {
+      setSongUrlAutofillStatus('Paste a song link first.', 'error');
+      return;
+    }
+
+    if (!isValidSongUrl(url, service)) {
+      setSongUrlAutofillStatus('That link does not match the selected service.', 'error');
+      return;
+    }
+
+    setButtonLoading(songUrlAutofillBtn, true, 'Autofilling...', 'Autofill From Link');
+    setSongUrlAutofillStatus('Looking up song details...', 'info');
+
+    try {
+      const query = new URLSearchParams({ service, url });
+      const data = await apiRequest(`/api/music/metadata?${query.toString()}`, { method: 'GET' });
+
+      const title = String(data?.title || '').trim();
+      const artist = String(data?.artist || '').trim();
+      const canonical = String(data?.url || '').trim();
+
+      if (title) document.getElementById('title').value = title;
+      if (artist) document.getElementById('artist').value = artist;
+      if (canonical && songUrlInput) songUrlInput.value = canonical;
+
+      if (title && artist) {
+        setSongUrlAutofillStatus(`Autofilled: ${title} - ${artist}`, 'success');
+      } else {
+        setSongUrlAutofillStatus('Autofill completed, but some fields are missing. Please review.', 'info');
+      }
+    } catch (error) {
+      setSongUrlAutofillStatus(error.message || 'Could not autofill from link.', 'error');
+    } finally {
+      setButtonLoading(songUrlAutofillBtn, false, 'Autofilling...', 'Autofill From Link');
+    }
+  });
+}
 
 appleSearchBtn.addEventListener('click', () => {
   runAppleMusicSearch();

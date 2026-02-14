@@ -23,6 +23,7 @@ import {
 } from './services/partyService.js';
 import { getUserById, loginUser, registerUser } from './services/authService.js';
 import { searchAppleMusicSongs } from './services/appleMusicService.js';
+import { resolveSongMetadata } from './services/metadataService.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -158,6 +159,23 @@ function mapAppleMusicError(res, error) {
   }
 }
 
+function mapMetadataError(res, error) {
+  switch (error) {
+    case 'invalid_service':
+      return res.status(400).json({ error: 'Unsupported music service' });
+    case 'missing_url':
+      return res.status(400).json({ error: 'Missing song URL' });
+    case 'invalid_song_url':
+      return res.status(400).json({ error: 'Invalid song URL for selected service' });
+    case 'metadata_not_found':
+      return res.status(404).json({ error: 'Could not read song metadata from this link' });
+    case 'metadata_lookup_failed':
+      return res.status(502).json({ error: 'Song metadata lookup is temporarily unavailable' });
+    default:
+      return res.status(400).json({ error: 'Song metadata lookup failed' });
+  }
+}
+
 const baseLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 500,
@@ -211,6 +229,14 @@ const musicSearchLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many Apple Music searches. Slow down.' }
+});
+
+const metadataLimiter = rateLimit({
+  windowMs: 2 * 60 * 1000,
+  max: 160,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many link autofill attempts. Slow down.' }
 });
 
 app.disable('x-powered-by');
@@ -312,6 +338,20 @@ app.get(
     const result = await searchAppleMusicSongs(req.query.term, req.query.storefront, req.query.limit);
     if (result.error) {
       mapAppleMusicError(res, result.error);
+      return;
+    }
+
+    res.json(result);
+  })
+);
+
+app.get(
+  '/api/music/metadata',
+  metadataLimiter,
+  asyncHandler(async (req, res) => {
+    const result = await resolveSongMetadata(req.query.service, req.query.url, req.query.storefront);
+    if (result.error) {
+      mapMetadataError(res, result.error);
       return;
     }
 

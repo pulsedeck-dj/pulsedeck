@@ -594,6 +594,18 @@ input:focus {
   margin-top: 10px;
 }
 
+.link-tools {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.advanced-link-block .status {
+  margin-top: 10px;
+  padding: 9px 10px;
+  font-size: 0.86rem;
+}
+
 .guide-list {
   margin: 6px 0 0;
   padding-left: 18px;
