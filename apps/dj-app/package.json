@@ -1,6 +1,6 @@
 {
   "name": "dj-app",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "PulseDeck macOS DJ desktop app",
   "author": "PulseDeck",
   "private": true,
@@ -24,6 +24,7 @@
   "build": {
     "appId": "com.pulsedeck.dj",
     "productName": "PulseDeck DJ",
+    "npmRebuild": false,
     "files": [
       "src/**/*",
       "package.json"
