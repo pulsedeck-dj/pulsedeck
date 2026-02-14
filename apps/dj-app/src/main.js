@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const { io } = require('socket.io-client');
 
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
-const DEFAULT_GUEST_WEB_BASE = 'https://pulsedeck-dj.github.io/pulsedeck/';
+const DEFAULT_GUEST_WEB_BASE = 'https://pulsedeck-dj.github.io/pulsedeck/guest.html';
 const HEARTBEAT_INTERVAL_MS = 10000;
 
 const DEFAULT_CONFIG = {

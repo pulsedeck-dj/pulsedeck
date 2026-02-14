@@ -365,10 +365,11 @@ function buildGuestShareUrl(code) {
   if (!PARTY_CODE_PATTERN.test(partyCode)) return '';
 
   const base = new URL(window.location.href);
+  const dir = base.pathname.endsWith('/') ? base.pathname : base.pathname.replace(/\/[^/]*$/, '/');
+  base.pathname = `${dir}guest.html`;
   base.search = '';
   base.hash = '';
   base.searchParams.set('partyCode', partyCode);
-  base.searchParams.set('mode', 'guest');
   return base.toString();
 }
 

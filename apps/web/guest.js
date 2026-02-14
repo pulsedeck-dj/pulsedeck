@@ -1,0 +1,678 @@
+function trimApiBase(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\/+$/, '');
+}
+
+function detectDefaultApiBase() {
+  const { hostname, port } = window.location;
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && port === '5173') {
+    return 'http://localhost:4000';
+  }
+  return '';
+}
+
+function normalizeApiBaseCandidate(value) {
+  const candidate = trimApiBase(value);
+  if (!candidate) return '';
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    parsed.hash = '';
+    parsed.search = '';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function readInitialApiBase() {
+  const stored = normalizeApiBaseCandidate(window.localStorage.getItem('pulse_api_base'));
+  if (stored) return stored;
+
+  const fromConfig = normalizeApiBaseCandidate(window.PULSE_CONFIG?.apiBase);
+  if (fromConfig) {
+    window.localStorage.setItem('pulse_api_base', fromConfig);
+    return fromConfig;
+  }
+
+  return normalizeApiBaseCandidate(detectDefaultApiBase());
+}
+
+const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
+const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'YouTube']);
+
+const joinForm = document.getElementById('joinForm');
+const partyCodeInput = document.getElementById('partyCode');
+const joinResult = document.getElementById('joinResult');
+const stopCheckingBtn = document.getElementById('stopCheckingBtn');
+
+const requestPanel = document.getElementById('requestPanel');
+const requestForm = document.getElementById('requestForm');
+const requestResult = document.getElementById('requestResult');
+
+const appleSearchSection = document.getElementById('appleSearchSection');
+const appleSearchTermInput = document.getElementById('appleSearchTerm');
+const appleSearchBtn = document.getElementById('appleSearchBtn');
+const appleSearchStatus = document.getElementById('appleSearchStatus');
+const appleSearchResults = document.getElementById('appleSearchResults');
+
+const songUrlInput = document.getElementById('songUrl');
+const songUrlSummary = document.querySelector('.advanced-link-block summary');
+const songUrlAutofillBtn = document.getElementById('songUrlAutofillBtn');
+const songUrlAutofillStatus = document.getElementById('songUrlAutofillStatus');
+
+let apiBase = readInitialApiBase();
+let activePartyCode = null;
+
+let joinDebounceTimer = null;
+let joinInFlight = false;
+let lastAutoJoinCode = '';
+let joinPollTimer = null;
+let joinPollCode = '';
+let joinPollInFlight = false;
+let joinPollAttempts = 0;
+
+function normalizePartyCode(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6);
+}
+
+function setStatus(element, text, type = 'neutral') {
+  if (!element) return;
+  element.classList.remove('status-neutral', 'status-info', 'status-success', 'status-error');
+  element.classList.add(`status-${type}`);
+  element.textContent = text;
+}
+
+function setSongUrlAutofillStatus(text, type = 'neutral') {
+  if (!songUrlAutofillStatus) return;
+  setStatus(songUrlAutofillStatus, text, type);
+}
+
+function setButtonLoading(button, loading, loadingLabel, idleLabel) {
+  if (!button) return;
+  button.disabled = loading;
+  if (loadingLabel && idleLabel) {
+    button.textContent = loading ? loadingLabel : idleLabel;
+  }
+}
+
+function revealPanel(panel) {
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  panel.classList.remove('panel-pop');
+  void panel.offsetWidth;
+  panel.classList.add('panel-pop');
+}
+
+function hidePanel(panel) {
+  if (!panel) return;
+  panel.classList.add('hidden');
+  panel.classList.remove('panel-pop');
+}
+
+function makeAbortSignal(timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+async function apiRequest(path, options = {}) {
+  if (!apiBase) {
+    throw new Error('This request site is not connected yet. Ask the DJ to finish setup.');
+  }
+
+  const { signal, clear } = makeAbortSignal(options.timeoutMs || 9000);
+
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    };
+
+    const res = await fetch(`${apiBase}${path}`, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await res.json() : {};
+
+    if (!res.ok) {
+      const error = new Error(data.error || `Request failed (${res.status})`);
+      error.status = res.status;
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Request timed out. Please retry.');
+    }
+    throw error;
+  } finally {
+    clear();
+  }
+}
+
+function makeIdempotencyKey() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function readSelectedService() {
+  const selected = requestForm?.querySelector('input[name="service"]:checked');
+  return selected ? selected.value : '';
+}
+
+function hostnameMatches(hostnameInput, allowedHostInput) {
+  const hostname = String(hostnameInput || '').toLowerCase();
+  const allowedHost = String(allowedHostInput || '').toLowerCase();
+  if (!hostname || !allowedHost) return false;
+  if (hostname === allowedHost) return true;
+  return hostname.endsWith(`.${allowedHost}`);
+}
+
+function isValidSongUrl(urlText, service) {
+  if (!urlText) return true;
+
+  let parsed;
+  try {
+    parsed = new URL(urlText);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'https:') return false;
+  const hostname = parsed.hostname;
+
+  if (service === 'Apple Music') {
+    return hostnameMatches(hostname, 'music.apple.com');
+  }
+
+  if (service === 'Spotify') {
+    return hostnameMatches(hostname, 'spotify.com') || hostnameMatches(hostname, 'spotify.link');
+  }
+
+  if (service === 'YouTube') {
+    return hostnameMatches(hostname, 'youtube.com') || hostnameMatches(hostname, 'youtu.be');
+  }
+
+  return false;
+}
+
+function serviceIsAppleMusic() {
+  return readSelectedService() === 'Apple Music';
+}
+
+function toggleAppleSearchVisibility() {
+  if (!appleSearchSection) return;
+
+  if (serviceIsAppleMusic()) {
+    appleSearchSection.classList.remove('hidden');
+  } else {
+    appleSearchSection.classList.add('hidden');
+    if (appleSearchResults) appleSearchResults.textContent = '';
+    setStatus(appleSearchStatus, 'Apple Music search is available only for Apple Music requests.', 'info');
+  }
+}
+
+function updateSongUrlUi() {
+  if (!songUrlInput) return;
+  const service = readSelectedService();
+
+  if (service === 'Apple Music') {
+    songUrlInput.placeholder = 'https://music.apple.com/...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Apple Music Link (Optional)';
+    setSongUrlAutofillStatus('Paste an Apple Music link and tap Autofill, or use Search to pick a song.', 'neutral');
+  } else if (service === 'Spotify') {
+    songUrlInput.placeholder = 'https://open.spotify.com/track/...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Spotify Link (Optional)';
+    setSongUrlAutofillStatus('Paste a Spotify track link and tap Autofill to pull title + artist.', 'neutral');
+  } else if (service === 'YouTube') {
+    songUrlInput.placeholder = 'https://youtu.be/...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste YouTube Link (Optional)';
+    setSongUrlAutofillStatus('Paste a YouTube link and tap Autofill to pull title + channel.', 'neutral');
+  } else {
+    songUrlInput.placeholder = 'https://...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Song Link (Optional)';
+    setSongUrlAutofillStatus('Paste a link and tap Autofill to pull song details.', 'neutral');
+  }
+
+  const current = String(songUrlInput.value || '').trim();
+  if (current && !isValidSongUrl(current, service)) {
+    songUrlInput.value = '';
+  }
+}
+
+function stopJoinPolling(message) {
+  if (joinPollTimer) {
+    clearInterval(joinPollTimer);
+    joinPollTimer = null;
+  }
+
+  joinPollCode = '';
+  joinPollAttempts = 0;
+  joinPollInFlight = false;
+
+  if (stopCheckingBtn) stopCheckingBtn.classList.add('hidden');
+  if (message) setStatus(joinResult, message, 'neutral');
+}
+
+function startJoinPolling(code) {
+  stopJoinPolling();
+
+  const maxAttempts = 60;
+  const intervalMs = 2000;
+
+  joinPollCode = code;
+  joinPollAttempts = 0;
+  joinPollInFlight = false;
+
+  if (stopCheckingBtn) stopCheckingBtn.classList.remove('hidden');
+
+  joinPollTimer = setInterval(async () => {
+    if (joinPollInFlight) return;
+    joinPollInFlight = true;
+    joinPollAttempts += 1;
+
+    try {
+      const data = await apiRequest(`/api/parties/${code}/join`, { method: 'POST', timeoutMs: 8000 });
+
+      if (data.djActive) {
+        stopJoinPolling();
+        activePartyCode = code;
+        revealPanel(requestPanel);
+        setStatus(joinResult, `DJ is live. Connected to party ${code}.`, 'success');
+        if (appleSearchTermInput) appleSearchTermInput.focus();
+        return;
+      }
+
+      if (joinPollAttempts >= maxAttempts) {
+        stopJoinPolling('Still waiting for DJ. Please ask the DJ to open the DJ app.');
+        return;
+      }
+
+      setStatus(joinResult, `Waiting for DJ to connect... (${joinPollAttempts}/${maxAttempts})`, 'info');
+    } catch (error) {
+      stopJoinPolling(error.message || 'Could not check DJ status.');
+    } finally {
+      joinPollInFlight = false;
+    }
+  }, intervalMs);
+}
+
+async function joinPartyByCode(code) {
+  if (!PARTY_CODE_PATTERN.test(code)) {
+    setStatus(joinResult, 'Party code must be exactly 6 letters/numbers.', 'error');
+    hidePanel(requestPanel);
+    activePartyCode = null;
+    return false;
+  }
+
+  setStatus(joinResult, `Checking party ${code}...`, 'info');
+
+  try {
+    const data = await apiRequest(`/api/parties/${code}/join`, { method: 'POST' });
+
+    if (!data.djActive) {
+      activePartyCode = null;
+      hidePanel(requestPanel);
+      setStatus(joinResult, 'Party found. Waiting for DJ to connect...', 'info');
+      startJoinPolling(code);
+      return false;
+    }
+
+    stopJoinPolling();
+    activePartyCode = code;
+    revealPanel(requestPanel);
+    setStatus(joinResult, `Connected to party ${code}. You can send requests now.`, 'success');
+    if (appleSearchTermInput) appleSearchTermInput.focus();
+    return true;
+  } catch (error) {
+    activePartyCode = null;
+    hidePanel(requestPanel);
+    stopJoinPolling();
+    setStatus(joinResult, error.message || 'Unable to join party.', 'error');
+    return false;
+  }
+}
+
+function scheduleAutoJoin(code) {
+  if (joinDebounceTimer) {
+    clearTimeout(joinDebounceTimer);
+  }
+
+  const normalized = normalizePartyCode(code);
+  if (!apiBase) return;
+  if (!PARTY_CODE_PATTERN.test(normalized)) return;
+  if (normalized === activePartyCode) return;
+  if (normalized === lastAutoJoinCode) return;
+
+  joinDebounceTimer = setTimeout(async () => {
+    if (joinInFlight) return;
+    joinInFlight = true;
+    lastAutoJoinCode = normalized;
+
+    try {
+      await joinPartyByCode(normalized);
+    } finally {
+      joinInFlight = false;
+    }
+  }, 450);
+}
+
+function fillRequestFieldsFromSearchResult(result) {
+  const titleInput = document.getElementById('title');
+  const artistInput = document.getElementById('artist');
+  if (titleInput) titleInput.value = result.title || '';
+  if (artistInput) artistInput.value = result.artist || '';
+  if (songUrlInput) songUrlInput.value = result.url || '';
+  setStatus(appleSearchStatus, `Selected ${result.title} - ${result.artist}`, 'success');
+}
+
+function renderAppleSearchResults(items) {
+  if (!appleSearchResults) return;
+  appleSearchResults.textContent = '';
+
+  if (!items.length) {
+    const note = document.createElement('p');
+    note.className = 'micro-note';
+    note.textContent = 'No results found.';
+    appleSearchResults.appendChild(note);
+    return;
+  }
+
+  for (const item of items) {
+    const card = document.createElement('article');
+    card.className = 'search-card';
+
+    const image = document.createElement('img');
+    image.alt = `${item.title} artwork`;
+    image.src = item.artworkUrl || '';
+
+    const meta = document.createElement('div');
+    meta.className = 'search-meta';
+
+    const title = document.createElement('p');
+    title.className = 'search-title';
+    title.textContent = item.title || 'Unknown title';
+
+    const sub = document.createElement('p');
+    sub.className = 'search-sub';
+    sub.textContent = `${item.artist || 'Unknown artist'}${item.album ? ` • ${item.album}` : ''}`;
+
+    meta.append(title, sub);
+
+    const actions = document.createElement('div');
+    actions.className = 'search-actions';
+
+    const autofillButton = document.createElement('button');
+    autofillButton.type = 'button';
+    autofillButton.className = 'btn btn-ghost';
+    autofillButton.textContent = 'Autofill';
+    autofillButton.addEventListener('click', () => fillRequestFieldsFromSearchResult(item));
+
+    const requestButton = document.createElement('button');
+    requestButton.type = 'button';
+    requestButton.className = 'btn btn-primary';
+    requestButton.textContent = 'Request Song';
+    requestButton.addEventListener('click', async () => {
+      const ok = await submitSongRequest(
+        {
+          service: 'Apple Music',
+          title: item.title,
+          artist: item.artist,
+          songUrl: item.url
+        },
+        { loading: true }
+      );
+
+      if (ok) {
+        setStatus(appleSearchStatus, `Requested ${item.title} - ${item.artist}`, 'success');
+      }
+    });
+
+    actions.append(autofillButton, requestButton);
+    card.append(image, meta, actions);
+    appleSearchResults.appendChild(card);
+  }
+}
+
+async function runAppleMusicSearch() {
+  if (!serviceIsAppleMusic()) return;
+
+  const term = String(appleSearchTermInput?.value || '').trim();
+  if (term.length < 2) {
+    setStatus(appleSearchStatus, 'Type at least 2 characters to search.', 'error');
+    return;
+  }
+
+  setButtonLoading(appleSearchBtn, true, 'Searching...', 'Search');
+  setStatus(appleSearchStatus, 'Searching Apple Music catalog...', 'info');
+
+  try {
+    const query = new URLSearchParams({ term, limit: '8' });
+    const data = await apiRequest(`/api/music/apple/search?${query.toString()}`, { method: 'GET' });
+    const results = Array.isArray(data.results) ? data.results : [];
+    renderAppleSearchResults(results);
+
+    if (results.length) {
+      setStatus(appleSearchStatus, `Found ${results.length} results. Tap Autofill or Request.`, 'success');
+    } else {
+      setStatus(appleSearchStatus, 'No results. Try another search.', 'neutral');
+    }
+  } catch (error) {
+    setStatus(appleSearchStatus, error.message || 'Apple Music search failed.', 'error');
+  } finally {
+    setButtonLoading(appleSearchBtn, false, 'Searching...', 'Search');
+  }
+}
+
+async function submitSongRequest(input, options = {}) {
+  if (!activePartyCode) {
+    setStatus(requestResult, 'Join a live party first.', 'error');
+    return false;
+  }
+
+  const service = String(input?.service || '').trim();
+  const title = String(input?.title || '').trim();
+  const artist = String(input?.artist || '').trim();
+  const songUrl = String(input?.songUrl || '').trim();
+
+  if (!ALLOWED_SERVICES.has(service)) {
+    setStatus(requestResult, 'Choose a valid music service.', 'error');
+    return false;
+  }
+
+  if (!title || title.length > 120) {
+    setStatus(requestResult, 'Song title is required (max 120 chars).', 'error');
+    return false;
+  }
+
+  if (!artist || artist.length > 120) {
+    setStatus(requestResult, 'Artist is required (max 120 chars).', 'error');
+    return false;
+  }
+
+  if (!isValidSongUrl(songUrl, service)) {
+    setStatus(requestResult, 'Song URL must be a valid HTTPS link for the selected service.', 'error');
+    return false;
+  }
+
+  const submitButton = requestForm?.querySelector('button[type="submit"]');
+  if (options.loading !== false) {
+    setButtonLoading(submitButton, true, 'Submitting...', 'Submit Request');
+  }
+  setStatus(requestResult, 'Submitting request to DJ queue...', 'info');
+
+  try {
+    const data = await apiRequest(`/api/parties/${activePartyCode}/requests`, {
+      method: 'POST',
+      headers: {
+        'X-Idempotency-Key': makeIdempotencyKey()
+      },
+      body: {
+        service,
+        title,
+        artist,
+        songUrl
+      }
+    });
+
+    setStatus(requestResult, `Queued #${data.seqNo}: ${data.title} - ${data.artist}`, 'success');
+
+    const titleInput = document.getElementById('title');
+    const artistInput = document.getElementById('artist');
+    if (titleInput) titleInput.value = '';
+    if (artistInput) artistInput.value = '';
+    if (songUrlInput) songUrlInput.value = '';
+    if (appleSearchTermInput) appleSearchTermInput.value = '';
+    if (appleSearchResults) appleSearchResults.textContent = '';
+    toggleAppleSearchVisibility();
+    updateSongUrlUi();
+
+    return true;
+  } catch (error) {
+    if (error.status === 409) {
+      hidePanel(requestPanel);
+      activePartyCode = null;
+      setStatus(joinResult, 'DJ is not active right now. Waiting for DJ to connect...', 'info');
+      startJoinPolling(joinPollCode || normalizePartyCode(partyCodeInput.value));
+    }
+
+    setStatus(requestResult, error.message || 'Request failed.', 'error');
+    return false;
+  } finally {
+    if (options.loading !== false) {
+      setButtonLoading(submitButton, false, 'Submitting...', 'Submit Request');
+    }
+  }
+}
+
+function readPartyCodeFromUrl() {
+  const params = new URLSearchParams(window.location.search || '');
+  const fromParam = params.get('partyCode') || params.get('code');
+  return normalizePartyCode(fromParam);
+}
+
+joinForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  const code = normalizePartyCode(partyCodeInput.value);
+  lastAutoJoinCode = code;
+  await joinPartyByCode(code);
+});
+
+partyCodeInput.addEventListener('input', () => {
+  partyCodeInput.value = normalizePartyCode(partyCodeInput.value);
+  stopJoinPolling();
+
+  const normalized = normalizePartyCode(partyCodeInput.value);
+  if (activePartyCode && normalized !== activePartyCode) {
+    activePartyCode = null;
+    hidePanel(requestPanel);
+    setStatus(joinResult, 'Party code changed. Tap Join to connect.', 'neutral');
+  }
+
+  scheduleAutoJoin(normalized);
+});
+
+stopCheckingBtn.addEventListener('click', () => {
+  stopJoinPolling('Stopped checking. Tap Join to retry.');
+});
+
+requestForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  await submitSongRequest({
+    service: readSelectedService(),
+    title: String(document.getElementById('title').value || ''),
+    artist: String(document.getElementById('artist').value || ''),
+    songUrl: String(songUrlInput?.value || '')
+  });
+});
+
+requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
+  input.addEventListener('change', () => {
+    toggleAppleSearchVisibility();
+    updateSongUrlUi();
+  });
+});
+
+appleSearchBtn.addEventListener('click', () => {
+  runAppleMusicSearch();
+});
+
+appleSearchTermInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    runAppleMusicSearch();
+  }
+});
+
+songUrlAutofillBtn.addEventListener('click', async () => {
+  const service = readSelectedService();
+  const url = String(songUrlInput?.value || '').trim();
+
+  if (!url) {
+    setSongUrlAutofillStatus('Paste a song link first.', 'error');
+    return;
+  }
+
+  if (!isValidSongUrl(url, service)) {
+    setSongUrlAutofillStatus('That link does not match the selected service.', 'error');
+    return;
+  }
+
+  setButtonLoading(songUrlAutofillBtn, true, 'Autofilling...', 'Autofill From Link');
+  setSongUrlAutofillStatus('Looking up song details...', 'info');
+
+  try {
+    const query = new URLSearchParams({ service, url });
+    const data = await apiRequest(`/api/music/metadata?${query.toString()}`, { method: 'GET' });
+
+    const title = String(data?.title || '').trim();
+    const artist = String(data?.artist || '').trim();
+    const canonical = String(data?.url || '').trim();
+
+    if (title) document.getElementById('title').value = title;
+    if (artist) document.getElementById('artist').value = artist;
+    if (canonical && songUrlInput) songUrlInput.value = canonical;
+
+    if (title && artist) {
+      setSongUrlAutofillStatus(`Autofilled: ${title} - ${artist}`, 'success');
+    } else {
+      setSongUrlAutofillStatus('Autofill completed, but some fields are missing. Please review.', 'info');
+    }
+  } catch (error) {
+    setSongUrlAutofillStatus(error.message || 'Could not autofill from link.', 'error');
+  } finally {
+    setButtonLoading(songUrlAutofillBtn, false, 'Autofilling...', 'Autofill From Link');
+  }
+});
+
+toggleAppleSearchVisibility();
+updateSongUrlUi();
+
+if (!apiBase) {
+  setStatus(joinResult, 'This request site is not connected yet. Ask the DJ to finish setup.', 'error');
+}
+
+const codeFromUrl = readPartyCodeFromUrl();
+if (PARTY_CODE_PATTERN.test(codeFromUrl)) {
+  partyCodeInput.value = codeFromUrl;
+  setStatus(joinResult, `Party code ${codeFromUrl} loaded. Checking now...`, 'info');
+  lastAutoJoinCode = codeFromUrl;
+  joinPartyByCode(codeFromUrl);
+}
+

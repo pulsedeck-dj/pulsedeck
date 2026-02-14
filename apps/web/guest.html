@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PulseDeck Guest Requests</title>
+    <meta name="theme-color" content="#00b9ff" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="page-guest">
+    <div class="shape shape-a" aria-hidden="true"></div>
+    <div class="shape shape-b" aria-hidden="true"></div>
+    <div class="shape shape-c" aria-hidden="true"></div>
+
+    <main class="shell">
+      <header class="hero reveal">
+        <p class="eyebrow">PulseDeck Guest Portal</p>
+        <h1>Request A Song</h1>
+        <p class="subtitle">Enter the party code shown on the DJ screen.</p>
+      </header>
+
+      <section class="window-panel reveal delay-1">
+        <article class="panel" id="joinPanel">
+          <div class="panel-head">
+            <h2>Party Code</h2>
+            <span class="chip">Guest</span>
+          </div>
+
+          <form id="joinForm" class="form-grid">
+            <label for="partyCode">Code</label>
+            <input id="partyCode" maxlength="6" autocomplete="off" placeholder="ABC123" required />
+            <button type="submit" class="btn btn-secondary">Join</button>
+          </form>
+
+          <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for code.</p>
+          <button id="stopCheckingBtn" class="btn btn-ghost btn-mini hidden" type="button">Stop Checking</button>
+        </article>
+
+        <article class="panel hidden" id="requestPanel">
+          <div class="panel-head">
+            <h2>Song Request</h2>
+            <span class="chip">Live</span>
+          </div>
+
+          <form id="requestForm" class="form-grid">
+            <p class="mini-label">Choose service</p>
+            <div class="service-row" role="radiogroup" aria-label="Music service">
+              <label class="service-pill">
+                <input type="radio" name="service" value="Apple Music" checked />
+                <span>Apple Music</span>
+              </label>
+              <label class="service-pill">
+                <input type="radio" name="service" value="Spotify" />
+                <span>Spotify</span>
+              </label>
+              <label class="service-pill">
+                <input type="radio" name="service" value="YouTube" />
+                <span>YouTube</span>
+              </label>
+            </div>
+
+            <div id="appleSearchSection" class="apple-search">
+              <label for="appleSearchTerm">Search Apple Music</label>
+              <div class="search-row">
+                <input id="appleSearchTerm" maxlength="120" placeholder="Search song or artist" />
+                <button id="appleSearchBtn" class="btn btn-secondary" type="button">Search</button>
+              </div>
+              <p id="appleSearchStatus" class="status status-neutral">Search to autofill song info.</p>
+              <div id="appleSearchResults" class="search-results"></div>
+            </div>
+
+            <label for="title">Song Title</label>
+            <input id="title" maxlength="120" required />
+
+            <label for="artist">Artist</label>
+            <input id="artist" maxlength="120" required />
+
+            <details class="advanced-link-block">
+              <summary>Advanced: Paste Song Link (Optional)</summary>
+              <label for="songUrl" class="advanced-label">Song URL</label>
+              <input id="songUrl" maxlength="500" placeholder="https://music.apple.com/..." />
+              <div class="link-tools">
+                <button id="songUrlAutofillBtn" class="btn btn-ghost btn-mini" type="button">
+                  Autofill From Link
+                </button>
+              </div>
+              <p id="songUrlAutofillStatus" class="status status-neutral" aria-live="polite">
+                Paste a link and tap Autofill to pull title + artist.
+              </p>
+            </details>
+
+            <button type="submit" class="btn btn-primary">Submit Request</button>
+          </form>
+
+          <p id="requestResult" class="status status-neutral" aria-live="polite">No request submitted yet.</p>
+        </article>
+      </section>
+
+      <p class="micro-note reveal delay-2">PulseDeck requests are delivered securely to the DJ queue in realtime.</p>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="guest.js"></script>
+  </body>
+</html>
+
