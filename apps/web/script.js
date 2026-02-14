@@ -499,6 +499,8 @@ function setAuthUi() {
   createPartyBtn.disabled = !isSignedIn || !backendReady;
 
   if (isSignedIn) {
+    // Hide auth inputs once signed in to keep the DJ flow focused.
+    authForm.classList.add('hidden');
     authIdentity.textContent = `Signed in as ${authUser.email}`;
     authIdentity.classList.remove('hidden');
     logoutBtn.classList.remove('hidden');
@@ -508,6 +510,7 @@ function setAuthUi() {
       setStatus(createResult, 'Ready to create a secure party.', 'neutral');
     }
   } else {
+    authForm.classList.remove('hidden');
     authIdentity.classList.add('hidden');
     authIdentity.textContent = '';
     logoutBtn.classList.add('hidden');
