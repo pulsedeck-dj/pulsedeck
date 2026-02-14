@@ -52,6 +52,7 @@ const tabSetup = document.getElementById('tabSetup');
 const tabStatus = document.getElementById('tabStatus');
 const tabHelp = document.getElementById('tabHelp');
 const openSetupBtn = document.getElementById('openSetupBtn');
+const setupBackBtn = document.getElementById('setupBackBtn');
 
 const windowPanels = Array.from(document.querySelectorAll('.window-panel'));
 const windowTabs = [tabGuest, tabDj, tabSetup, tabStatus, tabHelp];
@@ -261,7 +262,10 @@ function buildGuestShareUrl(code) {
   if (!PARTY_CODE_PATTERN.test(partyCode)) return '';
 
   const base = new URL(window.location.href);
+  base.search = '';
+  base.hash = '';
   base.searchParams.set('partyCode', partyCode);
+  base.searchParams.set('mode', 'guest');
   return base.toString();
 }
 
@@ -312,6 +316,15 @@ function readPartyCodeFromUrl() {
   const params = new URLSearchParams(window.location.search || '');
   const fromParam = params.get('partyCode') || params.get('code');
   return normalizePartyCode(fromParam);
+}
+
+function readPageModeFromUrl() {
+  const params = new URLSearchParams(window.location.search || '');
+  const mode = String(params.get('mode') || '').trim().toLowerCase();
+
+  if (mode === 'guest' || params.get('guest') === '1') return 'guest';
+  if (mode === 'dj') return 'dj';
+  return '';
 }
 
 function setAuthToken(token) {
@@ -829,6 +842,11 @@ openSetupBtn.addEventListener('click', () => {
   apiBaseConfigInput.focus();
 });
 
+setupBackBtn.addEventListener('click', () => {
+  setWindow('guest');
+  partyCodeInput.focus();
+});
+
 apiBaseConfigForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
@@ -1035,7 +1053,12 @@ clearTimelineBtn.addEventListener('click', () => {
 });
 
 setApiBase(apiBase);
-setWindow('guest');
+const pageMode = readPageModeFromUrl();
+if (pageMode === 'guest') {
+  document.body.classList.add('mode-guest');
+}
+
+setWindow(pageMode === 'dj' ? 'dj' : 'guest');
 toggleAppleSearchVisibility();
 updateGuestSummary();
 updateSystemStatus();

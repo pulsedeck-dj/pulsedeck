@@ -71,7 +71,7 @@ This repo includes `render.yaml` so Render can provision DB + API service.
 - `pulsedeck-db` (Postgres)
 - `pulsedeck` (Node web service)
 4. Set `WEB_ORIGIN` in Render env to your final web URL (e.g. `https://pulsedeck.onrender.com`).
-5. Add `APPLE_MUSIC_DEVELOPER_TOKEN` if you want Apple Music search enabled.
+5. Optional: add `APPLE_MUSIC_DEVELOPER_TOKEN` for full Apple Music catalog search (otherwise it falls back to iTunes Search).
 
 The server hosts the web app in production, so one URL serves both frontend and API.
 
@@ -146,5 +146,5 @@ From repo root:
 - `GET /api/parties/:code/requests` (`X-DJ-Session-ID`, `X-DJ-Token`)
 
 ## Notes
-- Apple Music search requires a valid Apple Music developer token.
+- Apple Music search uses Apple Music API when `APPLE_MUSIC_DEVELOPER_TOKEN` is set, otherwise it falls back to iTunes Search.
 - This system stores request metadata and song URLs.

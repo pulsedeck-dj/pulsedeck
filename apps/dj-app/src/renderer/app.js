@@ -25,6 +25,8 @@ const shareWindow = document.getElementById('shareWindow');
 const statusPill = document.getElementById('statusPill');
 const statusText = document.getElementById('statusText');
 const requestsList = document.getElementById('requestsList');
+const queueOrderBtn = document.getElementById('queueOrderBtn');
+const queueFilterInput = document.getElementById('queueFilter');
 const requestCount = document.getElementById('requestCount');
 const requestCountTab = document.getElementById('requestCountTab');
 const logList = document.getElementById('logList');
@@ -48,6 +50,9 @@ let unsubscribe = null;
 let queueItems = [];
 let activeWindow = 'booth';
 let lastSharePayload = null;
+let queueOrder = 'oldest';
+
+const QUEUE_ORDER_KEY = 'pulse_dj_queue_order';
 
 function normalizePartyCode(value) {
   return String(value || '')
@@ -72,6 +77,10 @@ function setWindow(windowName) {
   boothWindow.classList.toggle('hidden', !isBooth);
   requestsWindow.classList.toggle('hidden', !isRequests);
   shareWindow.classList.toggle('hidden', !isShare);
+
+  boothWindow.classList.toggle('is-active', isBooth);
+  requestsWindow.classList.toggle('is-active', isRequests);
+  shareWindow.classList.toggle('is-active', isShare);
 
   tabBoothBtn.classList.toggle('is-active', isBooth);
   tabRequestsBtn.classList.toggle('is-active', isRequests);
@@ -122,6 +131,37 @@ function appendLog(level, message, at) {
   }
 }
 
+function readQueueOrder() {
+  try {
+    const stored = String(window.localStorage.getItem(QUEUE_ORDER_KEY) || '').trim();
+    if (stored === 'newest') return 'newest';
+  } catch {
+    // ignore
+  }
+  return 'oldest';
+}
+
+function writeQueueOrder(value) {
+  try {
+    window.localStorage.setItem(QUEUE_ORDER_KEY, value);
+  } catch {
+    // ignore
+  }
+}
+
+function updateQueueOrderUi() {
+  if (!queueOrderBtn) return;
+  queueOrderBtn.textContent = queueOrder === 'newest' ? 'Newest first' : 'Oldest first';
+}
+
+function setQueueOrder(nextOrder) {
+  queueOrder = nextOrder === 'newest' ? 'newest' : 'oldest';
+  writeQueueOrder(queueOrder);
+  updateQueueOrderUi();
+  sortQueue(queueItems);
+  renderRequestList();
+}
+
 function sanitizeQueueEntry(entry) {
   const id = String(entry?.id || '').trim();
   if (!id) return null;
@@ -141,8 +181,16 @@ function sanitizeQueueEntry(entry) {
 
 function sortQueue(items) {
   items.sort((a, b) => {
-    if (a.seqNo && b.seqNo) return b.seqNo - a.seqNo;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    const aHasSeq = a.seqNo > 0;
+    const bHasSeq = b.seqNo > 0;
+
+    if (aHasSeq && bHasSeq) {
+      return queueOrder === 'newest' ? b.seqNo - a.seqNo : a.seqNo - b.seqNo;
+    }
+
+    const aTime = new Date(a.createdAt).getTime();
+    const bTime = new Date(b.createdAt).getTime();
+    return queueOrder === 'newest' ? bTime - aTime : aTime - bTime;
   });
 }
 
@@ -195,6 +243,16 @@ function renderRequestList() {
   requestsList.textContent = '';
   updateQueueCounters();
 
+  const filterTerm = String(queueFilterInput?.value || '')
+    .trim()
+    .toLowerCase();
+  const visibleItems = filterTerm
+    ? queueItems.filter((entry) => {
+        const hay = `${entry.title} ${entry.artist} ${entry.service}`.toLowerCase();
+        return hay.includes(filterTerm);
+      })
+    : queueItems;
+
   if (!queueItems.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
@@ -203,7 +261,22 @@ function renderRequestList() {
     return;
   }
 
-  for (const entry of queueItems) {
+  if (filterTerm) {
+    const note = document.createElement('p');
+    note.className = 'filter-note';
+    note.textContent = `Showing ${visibleItems.length} of ${queueItems.length} requests.`;
+    requestsList.appendChild(note);
+
+    if (!visibleItems.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty';
+      empty.textContent = `No matches for "${filterTerm}".`;
+      requestsList.appendChild(empty);
+      return;
+    }
+  }
+
+  for (const entry of visibleItems) {
     const item = document.createElement('article');
     item.className = 'request-item';
 
@@ -390,6 +463,8 @@ async function initialize() {
   clearQueue();
   setStatus('idle', 'Loading settings...');
   setSharePlaceholder('Set party code to generate link.');
+  queueOrder = readQueueOrder();
+  updateQueueOrderUi();
 
   const config = await window.djApi.loadConfig();
   writeFormConfig(config);
@@ -434,6 +509,15 @@ tabRequestsBtn.addEventListener('click', () => {
 
 tabShareBtn.addEventListener('click', () => {
   setWindow('share');
+});
+
+queueOrderBtn.addEventListener('click', () => {
+  setQueueOrder(queueOrder === 'oldest' ? 'newest' : 'oldest');
+  appendLog('info', `Queue order set: ${queueOrder === 'newest' ? 'Newest first' : 'Oldest first'}`, new Date().toISOString());
+});
+
+queueFilterInput.addEventListener('input', () => {
+  renderRequestList();
 });
 
 jumpRequestsBtn.addEventListener('click', () => {

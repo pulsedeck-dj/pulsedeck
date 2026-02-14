@@ -30,10 +30,34 @@ const webRootDir = path.resolve(__dirname, '../../web');
 const webIndexPath = path.join(webRootDir, 'index.html');
 const serveWeb = String(process.env.SERVE_WEB || 'true').toLowerCase() !== 'false';
 
-const allowedOrigins = String(process.env.WEB_ORIGIN || 'http://localhost:5173')
-  .split(',')
-  .map((entry) => entry.trim())
-  .filter(Boolean);
+function normalizeAllowedOrigin(entry) {
+  let value = String(entry || '').trim();
+  if (!value) return '';
+
+  // Accept full URLs (including paths) and bare host:port entries.
+  if (!/^https?:\/\//i.test(value)) {
+    if (value.startsWith('localhost') || value.startsWith('127.0.0.1')) {
+      value = `http://${value}`;
+    } else {
+      value = `https://${value}`;
+    }
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return '';
+  }
+}
+
+function readAllowedOrigins() {
+  const envValue = String(process.env.WEB_ORIGIN || '').trim();
+  const rawList = envValue ? envValue.split(',') : ['http://localhost:5173'];
+  const list = rawList.map(normalizeAllowedOrigin).filter(Boolean);
+  return Array.from(new Set(list));
+}
+
+const allowedOrigins = readAllowedOrigins();
 
 const io = new Server(server, {
   cors: {
@@ -119,10 +143,10 @@ function mapPartyError(res, error) {
 
 function mapAppleMusicError(res, error) {
   switch (error) {
-    case 'apple_music_not_configured':
-      return res.status(503).json({ error: 'Apple Music search is not configured' });
     case 'search_term_too_short':
       return res.status(400).json({ error: 'Search term must be at least 2 characters' });
+    case 'apple_music_search_failed':
+      return res.status(502).json({ error: 'Apple Music search is temporarily unavailable' });
     default:
       return res.status(400).json({ error: 'Apple Music search failed' });
   }

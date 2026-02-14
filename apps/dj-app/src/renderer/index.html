@@ -83,7 +83,19 @@
           <article class="panel">
             <div class="panel-head">
               <h2>Song Queue</h2>
-              <span id="requestCount" class="count-pill">0</span>
+              <div class="panel-head-actions">
+                <button id="queueOrderBtn" class="btn btn-ghost btn-mini" type="button">Oldest first</button>
+                <span id="requestCount" class="count-pill">0</span>
+              </div>
+            </div>
+            <div class="queue-toolbar">
+              <input
+                id="queueFilter"
+                type="text"
+                autocomplete="off"
+                placeholder="Filter by title, artist, or service..."
+                aria-label="Filter queue"
+              />
             </div>
             <div id="requestsList" class="requests-list"></div>
           </article>

@@ -124,6 +124,7 @@ function buildGuestJoinUrl(guestWebBaseInput, partyCodeInput) {
   const guestWebBase = sanitizeWebUrl(guestWebBaseInput, DEFAULT_GUEST_WEB_BASE);
   const guestUrl = new URL(guestWebBase);
   guestUrl.searchParams.set('partyCode', partyCode);
+  guestUrl.searchParams.set('mode', 'guest');
 
   return {
     partyCode,

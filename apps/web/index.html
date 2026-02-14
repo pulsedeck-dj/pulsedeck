@@ -202,7 +202,10 @@
           <article class="panel">
             <div class="panel-head">
               <h2>Backend Connection</h2>
-              <span class="chip">Required</span>
+              <div class="panel-head-actions">
+                <button id="setupBackBtn" class="btn btn-ghost btn-mini" type="button">Back</button>
+                <span class="chip">Required</span>
+              </div>
             </div>
             <p class="panel-copy">
               Set your API base URL once. This makes the live site work even if default config is empty.
@@ -309,7 +312,7 @@
             <ul class="help-list">
               <li><strong>Backend not configured:</strong> open Setup Window and set your API Base URL.</li>
               <li><strong>DJ not active:</strong> the DJ must open the DJ app and click Connect for that party code.</li>
-              <li><strong>Apple Music search missing:</strong> your backend needs an Apple Music developer token set.</li>
+              <li><strong>Apple Music search unavailable:</strong> backend cannot reach Apple right now. Optional: add an Apple developer token for full catalog search.</li>
               <li><strong>Keep DJ key private:</strong> only paste it into PulseDeck DJ desktop.</li>
             </ul>
           </article>

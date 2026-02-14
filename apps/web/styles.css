@@ -192,6 +192,12 @@ h1 {
   gap: 8px;
 }
 
+.panel-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 h2 {
   margin: 0;
   font-family: 'Bebas Neue', Impact, sans-serif;
@@ -256,6 +262,11 @@ input:focus {
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.btn-mini {
+  padding: 7px 12px;
+  font-size: 0.84rem;
 }
 
 .btn:hover {
@@ -644,6 +655,10 @@ input:focus {
   display: none;
 }
 
+.mode-guest .window-tabs {
+  display: none;
+}
+
 .reveal {
   opacity: 0;
   transform: translateY(12px);
@@ -732,6 +747,10 @@ input:focus {
 
   .btn {
     width: 100%;
+  }
+
+  .panel-head-actions .btn {
+    width: auto;
   }
 
   .button-row,
