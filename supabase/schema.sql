@@ -8,7 +8,7 @@ create extension if not exists pgcrypto with schema extensions;
 
 -- Core tables
 create table if not exists public.parties (
-  id uuid primary key default gen_random_uuid(),
+  id uuid primary key default extensions.gen_random_uuid(),
   code text not null unique,
   status text not null default 'live',
   created_at timestamptz not null default now(),
@@ -19,7 +19,7 @@ create table if not exists public.parties (
 );
 
 create table if not exists public.dj_sessions (
-  id uuid primary key default gen_random_uuid(),
+  id uuid primary key default extensions.gen_random_uuid(),
   party_id uuid not null references public.parties(id) on delete cascade,
   token_hash text not null,
   device_name text not null,
@@ -37,7 +37,7 @@ create index if not exists dj_sessions_party_active_idx on public.dj_sessions(pa
 create index if not exists parties_owner_idx on public.parties(owner_id);
 
 create table if not exists public.song_requests (
-  id uuid primary key default gen_random_uuid(),
+  id uuid primary key default extensions.gen_random_uuid(),
   party_id uuid not null references public.parties(id) on delete cascade,
   seq_no int not null default 0,
   title text not null,
@@ -55,7 +55,7 @@ create index if not exists song_requests_party_created_idx on public.song_reques
 create index if not exists song_requests_party_status_seq_idx on public.song_requests(party_id, status, seq_no);
 
 create table if not exists public.idempotency_keys (
-  id uuid primary key default gen_random_uuid(),
+  id uuid primary key default extensions.gen_random_uuid(),
   party_id uuid not null references public.parties(id) on delete cascade,
   key text not null,
   request_id uuid not null references public.song_requests(id) on delete cascade,
@@ -249,7 +249,7 @@ begin
     raise exception 'Invalid DJ key';
   end if;
 
-  token_plain := encode(gen_random_bytes(32), 'hex');
+  token_plain := encode(extensions.gen_random_bytes(32), 'hex');
 
   update public.dj_sessions
      set active = false

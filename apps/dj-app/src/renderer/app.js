@@ -1,7 +1,5 @@
-const apiBaseInput = document.getElementById('apiBase');
 const partyCodeInput = document.getElementById('partyCode');
 const djKeyInput = document.getElementById('djKey');
-const guestWebBaseInput = document.getElementById('guestWebBase');
 const deviceNameInput = document.getElementById('deviceName');
 
 const saveBtn = document.getElementById('saveBtn');
@@ -632,19 +630,15 @@ function renderStage() {
 
 function readFormConfig() {
   return {
-    apiBase: String(apiBaseInput.value || '').trim(),
     partyCode: normalizePartyCode(partyCodeInput.value),
     djKey: String(djKeyInput.value || '').trim(),
-    guestWebBase: String(guestWebBaseInput.value || '').trim(),
     deviceName: String(deviceNameInput.value || '').trim()
   };
 }
 
 function writeFormConfig(config) {
-  apiBaseInput.value = config.apiBase || '';
   partyCodeInput.value = config.partyCode || '';
   djKeyInput.value = config.djKey || '';
-  guestWebBaseInput.value = config.guestWebBase || '';
   deviceNameInput.value = config.deviceName || '';
 }
 
@@ -721,10 +715,7 @@ async function refreshShare({ openModal } = {}) {
   }
 
   try {
-    const payload = await window.djApi.buildGuestQr({
-      partyCode,
-      guestWebBase: String(guestWebBaseInput.value || '').trim()
-    });
+    const payload = await window.djApi.buildGuestQr({ partyCode });
 
     applySharePayload(payload);
 

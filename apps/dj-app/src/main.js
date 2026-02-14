@@ -18,7 +18,7 @@ const DEFAULT_SUPABASE_ANON_KEY =
 
 const DEFAULT_CONFIG = {
   // Legacy server mode (still supported). Supabase mode is used when configured.
-  apiBase: 'http://localhost:4000',
+  apiBase: '',
   supabaseUrl: DEFAULT_SUPABASE_URL,
   supabaseAnonKey: DEFAULT_SUPABASE_ANON_KEY,
   partyCode: '',
@@ -358,7 +358,7 @@ async function connectDj(configInput) {
       throw new Error('DJ key is required.');
     }
 
-    const useSupabase = isSupabaseUrl(config.supabaseUrl) || isSupabaseUrl(config.apiBase);
+    const useSupabase = isSupabaseUrl(config.supabaseUrl) || !String(config.apiBase || '').trim() || isSupabaseUrl(config.apiBase);
 
     setStatus('connecting', 'Claiming DJ role...');
     log('info', `Claiming DJ role for ${partyCode}...`);
