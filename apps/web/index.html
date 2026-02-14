@@ -42,6 +42,7 @@
         <button id="tabGuest" class="window-tab is-active" type="button" data-window="guest">Guest Window</button>
         <button id="tabDj" class="window-tab" type="button" data-window="dj">DJ Window</button>
         <button id="tabSetup" class="window-tab" type="button" data-window="setup">Setup Window</button>
+        <button id="tabStatus" class="window-tab" type="button" data-window="status">Status Window</button>
       </nav>
 
       <section id="guestWindow" class="window-panel reveal delay-2" data-window="guest">
@@ -58,6 +59,24 @@
             <button type="submit" class="btn btn-secondary">Join Party</button>
           </form>
           <p id="joinResult" class="status status-neutral" aria-live="polite">Waiting for code.</p>
+        </article>
+
+        <article class="panel" id="guestSummaryPanel">
+          <div class="panel-head">
+            <h2>Guest Session</h2>
+            <span class="chip">Now</span>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <span>Connected Party</span>
+              <strong id="guestPartyCodeOut">------</strong>
+            </div>
+            <div class="summary-item">
+              <span>Requests Sent</span>
+              <strong id="guestRequestCountOut">0</strong>
+            </div>
+          </div>
+          <p id="guestLastRequestOut" class="micro-note">No requests sent yet.</p>
         </article>
 
         <article class="panel hidden" id="requestSection">
@@ -99,8 +118,11 @@
             <label for="artist">Artist</label>
             <input id="artist" maxlength="120" required />
 
-            <label for="appleMusicUrl">Song URL (optional)</label>
-            <input id="appleMusicUrl" maxlength="500" placeholder="https://music.apple.com/..." />
+            <details class="advanced-link-block">
+              <summary>Advanced: Paste Song Link (Optional)</summary>
+              <label for="appleMusicUrl" class="advanced-label">Song URL</label>
+              <input id="appleMusicUrl" maxlength="500" placeholder="https://music.apple.com/..." />
+            </details>
 
             <button type="submit" class="btn btn-primary">Submit Request</button>
           </form>
@@ -205,6 +227,44 @@
             <p class="micro-note">
               Tip: The DJ app can generate a QR code that opens this page with the party code already filled in.
             </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="statusWindow" class="window-panel hidden" data-window="status">
+        <div class="panel-grid panel-grid-2">
+          <article class="panel">
+            <div class="panel-head">
+              <h2>System Status</h2>
+              <span class="chip">Live</span>
+            </div>
+
+            <div class="status-card-grid">
+              <article class="status-card">
+                <p>Backend</p>
+                <strong id="sysBackendValue">Checking...</strong>
+              </article>
+              <article class="status-card">
+                <p>DJ Account</p>
+                <strong id="sysAuthValue">Signed out</strong>
+              </article>
+              <article class="status-card">
+                <p>Latest Party</p>
+                <strong id="sysPartyValue">------</strong>
+              </article>
+              <article class="status-card">
+                <p>Guest Join</p>
+                <strong id="sysGuestValue">Not joined</strong>
+              </article>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Event Timeline</h2>
+              <button id="clearTimelineBtn" class="btn btn-ghost" type="button">Clear</button>
+            </div>
+            <div id="eventTimeline" class="timeline-list"></div>
           </article>
         </div>
       </section>

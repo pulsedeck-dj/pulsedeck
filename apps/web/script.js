@@ -52,13 +52,10 @@ const PASSWORD_MIN_LENGTH = 10;
 const tabGuest = document.getElementById('tabGuest');
 const tabDj = document.getElementById('tabDj');
 const tabSetup = document.getElementById('tabSetup');
+const tabStatus = document.getElementById('tabStatus');
 const openSetupBtn = document.getElementById('openSetupBtn');
 const windowPanels = Array.from(document.querySelectorAll('.window-panel'));
-const windowTabs = [tabGuest, tabDj, tabSetup];
-
-const guestWindow = document.getElementById('guestWindow');
-const djWindow = document.getElementById('djWindow');
-const setupWindow = document.getElementById('setupWindow');
+const windowTabs = [tabGuest, tabDj, tabSetup, tabStatus];
 
 const authForm = document.getElementById('authForm');
 const authEmailInput = document.getElementById('authEmail');
@@ -92,6 +89,10 @@ const appleSearchBtn = document.getElementById('appleSearchBtn');
 const appleSearchStatus = document.getElementById('appleSearchStatus');
 const appleSearchResults = document.getElementById('appleSearchResults');
 
+const guestPartyCodeOut = document.getElementById('guestPartyCodeOut');
+const guestRequestCountOut = document.getElementById('guestRequestCountOut');
+const guestLastRequestOut = document.getElementById('guestLastRequestOut');
+
 const apiBaseConfigForm = document.getElementById('apiBaseConfigForm');
 const apiBaseConfigInput = document.getElementById('apiBaseConfig');
 const saveApiBaseBtn = document.getElementById('saveApiBaseBtn');
@@ -100,11 +101,23 @@ const clearApiBaseBtn = document.getElementById('clearApiBaseBtn');
 const apiBaseConfigStatus = document.getElementById('apiBaseConfigStatus');
 const effectiveApiBase = document.getElementById('effectiveApiBase');
 
+const sysBackendValue = document.getElementById('sysBackendValue');
+const sysAuthValue = document.getElementById('sysAuthValue');
+const sysPartyValue = document.getElementById('sysPartyValue');
+const sysGuestValue = document.getElementById('sysGuestValue');
+const eventTimeline = document.getElementById('eventTimeline');
+const clearTimelineBtn = document.getElementById('clearTimelineBtn');
+
 let apiBase = readInitialApiBase();
 let activeWindow = 'guest';
 let activePartyCode = null;
 let authToken = window.localStorage.getItem(AUTH_TOKEN_KEY) || '';
 let authUser = null;
+let backendReachable = false;
+let backendChecked = false;
+let lastCreatedPartyCode = '';
+let guestRequestCount = 0;
+let guestLastRequest = '';
 
 function normalizePartyCode(value) {
   return String(value || '')
@@ -112,6 +125,11 @@ function normalizePartyCode(value) {
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '')
     .slice(0, 6);
+}
+
+function nowLabel(iso) {
+  const date = iso ? new Date(iso) : new Date();
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function setStatus(element, text, type = 'neutral') {
@@ -143,6 +161,26 @@ function hidePanel(panel) {
   panel.classList.remove('panel-pop');
 }
 
+function pushTimeline(level, message) {
+  const item = document.createElement('article');
+  item.className = `timeline-item timeline-${level || 'info'}`;
+
+  const time = document.createElement('p');
+  time.className = 'timeline-time';
+  time.textContent = nowLabel();
+
+  const text = document.createElement('p');
+  text.className = 'timeline-msg';
+  text.textContent = message;
+
+  item.append(time, text);
+  eventTimeline.prepend(item);
+
+  while (eventTimeline.children.length > 120) {
+    eventTimeline.removeChild(eventTimeline.lastElementChild);
+  }
+}
+
 function setWindow(windowName) {
   activeWindow = windowName;
 
@@ -163,6 +201,26 @@ function updateEffectiveApiBaseLabel() {
   effectiveApiBase.textContent = apiBase || 'Not configured';
 }
 
+function updateGuestSummary() {
+  guestPartyCodeOut.textContent = activePartyCode || '------';
+  guestRequestCountOut.textContent = String(guestRequestCount);
+  guestLastRequestOut.textContent = guestLastRequest || 'No requests sent yet.';
+}
+
+function updateSystemStatus() {
+  if (!apiBase) {
+    sysBackendValue.textContent = 'Not configured';
+  } else if (!backendChecked) {
+    sysBackendValue.textContent = 'Checking...';
+  } else {
+    sysBackendValue.textContent = backendReachable ? 'Connected' : 'Unreachable';
+  }
+
+  sysAuthValue.textContent = authUser ? `Signed in: ${authUser.email}` : 'Signed out';
+  sysPartyValue.textContent = lastCreatedPartyCode || '------';
+  sysGuestValue.textContent = activePartyCode ? `Joined: ${activePartyCode}` : 'Not joined';
+}
+
 function setApiBase(nextValue) {
   apiBase = normalizeApiBaseCandidate(nextValue);
 
@@ -172,8 +230,12 @@ function setApiBase(nextValue) {
     window.localStorage.removeItem('pulse_api_base');
   }
 
+  backendChecked = false;
+  backendReachable = false;
+
   apiBaseConfigInput.value = apiBase;
   updateEffectiveApiBaseLabel();
+  updateSystemStatus();
   setAuthUi();
 }
 
@@ -251,6 +313,8 @@ function setAuthUi() {
     setStatus(createResult, 'Sign in to create parties.', 'neutral');
     resetDjSecrets();
   }
+
+  updateSystemStatus();
 }
 
 async function copyToClipboard(text) {
@@ -286,6 +350,7 @@ async function copySecret(label, value) {
   const ok = await copyToClipboard(value);
   if (ok) {
     setStatus(createResult, `${label} copied.`, 'success');
+    pushTimeline('success', `${label} copied to clipboard.`);
   } else {
     setStatus(createResult, `Could not copy ${label}.`, 'error');
   }
@@ -358,8 +423,11 @@ async function apiRequest(path, options = {}) {
 
 async function checkBackendHealth() {
   if (!apiBase) {
+    backendChecked = false;
+    backendReachable = false;
     setStatus(backendStatus, 'Backend not configured. Open Setup Window and set API Base URL.', 'error');
     setStatus(apiBaseConfigStatus, 'No saved API base URL yet.', 'neutral');
+    updateSystemStatus();
     return false;
   }
 
@@ -367,24 +435,24 @@ async function checkBackendHealth() {
 
   try {
     await pingBackendHealth(apiBase);
+    backendChecked = true;
+    backendReachable = true;
     setStatus(backendStatus, 'Backend connected.', 'success');
     setStatus(apiBaseConfigStatus, `Connected to ${apiBase}`, 'success');
+    updateSystemStatus();
     return true;
   } catch (error) {
+    backendChecked = true;
+    backendReachable = false;
     setStatus(backendStatus, `Backend unreachable (${apiBase}). Check Setup Window.`, 'error');
     setStatus(apiBaseConfigStatus, error.message || 'Backend health check failed.', 'error');
+    updateSystemStatus();
     return false;
   }
 }
 
 async function refreshAuthIdentity() {
-  if (!authToken) {
-    authUser = null;
-    setAuthUi();
-    return;
-  }
-
-  if (!apiBase) {
+  if (!authToken || !apiBase) {
     authUser = null;
     setAuthUi();
     return;
@@ -448,6 +516,7 @@ async function submitAuth(mode) {
     setAuthUi();
     setStatus(authResult, mode === 'register' ? 'Account created and signed in.' : 'Signed in.', 'success');
     authPasswordInput.value = '';
+    pushTimeline('success', `DJ ${mode === 'register' ? 'registered' : 'signed in'}: ${email}`);
   } catch (error) {
     setStatus(authResult, error.message || 'Authentication failed.', 'error');
   } finally {
@@ -550,6 +619,8 @@ async function joinPartyByCode(code) {
     setStatus(joinResult, 'Party code must be exactly 6 letters/numbers.', 'error');
     hidePanel(requestSection);
     activePartyCode = null;
+    updateGuestSummary();
+    updateSystemStatus();
     return false;
   }
 
@@ -562,17 +633,24 @@ async function joinPartyByCode(code) {
       activePartyCode = null;
       hidePanel(requestSection);
       setStatus(joinResult, 'Party found, but DJ is not active yet. Ask DJ to open the DJ app.', 'info');
+      updateGuestSummary();
+      updateSystemStatus();
       return false;
     }
 
     activePartyCode = code;
     revealPanel(requestSection);
     setStatus(joinResult, `Connected to party ${code}. You can send requests now.`, 'success');
+    pushTimeline('success', `Guest joined party ${code}.`);
+    updateGuestSummary();
+    updateSystemStatus();
     return true;
   } catch (error) {
     activePartyCode = null;
     hidePanel(requestSection);
     setStatus(joinResult, error.message || 'Unable to join party.', 'error');
+    updateGuestSummary();
+    updateSystemStatus();
     return false;
   }
 }
@@ -605,6 +683,7 @@ apiBaseConfigForm.addEventListener('submit', async (event) => {
     if (ok) {
       await refreshAuthIdentity();
       setStatus(apiBaseConfigStatus, `Saved and connected: ${apiBase}`, 'success');
+      pushTimeline('success', `Backend API configured: ${apiBase}`);
       if (activeWindow === 'setup') {
         setWindow('guest');
       }
@@ -626,6 +705,7 @@ testApiBaseBtn.addEventListener('click', async () => {
   try {
     await pingBackendHealth(candidate);
     setStatus(apiBaseConfigStatus, `Reachable: ${candidate}`, 'success');
+    pushTimeline('info', `Backend test passed for ${candidate}`);
   } catch (error) {
     setStatus(apiBaseConfigStatus, error.message || 'Could not reach backend.', 'error');
   } finally {
@@ -639,8 +719,14 @@ clearApiBaseBtn.addEventListener('click', () => {
   setAuthToken('');
   setAuthUi();
   hidePanel(requestSection);
+  activePartyCode = null;
+  guestRequestCount = 0;
+  guestLastRequest = '';
+  updateGuestSummary();
+  updateSystemStatus();
   setStatus(apiBaseConfigStatus, 'API base cleared.', 'neutral');
   setStatus(backendStatus, 'Backend not configured. Open Setup Window and set API Base URL.', 'error');
+  pushTimeline('warning', 'Backend API cleared from this browser.');
   setWindow('setup');
 });
 
@@ -672,6 +758,11 @@ logoutBtn.addEventListener('click', () => {
   setAuthToken('');
   setAuthUi();
   setStatus(joinResult, 'Waiting for code.', 'neutral');
+  hidePanel(requestSection);
+  activePartyCode = null;
+  updateGuestSummary();
+  updateSystemStatus();
+  pushTimeline('info', 'DJ signed out.');
   setWindow('dj');
 });
 
@@ -685,6 +776,9 @@ createPartyBtn.addEventListener('click', async () => {
     djKeyOut.textContent = data.djKey;
     revealPanel(djSecrets);
 
+    lastCreatedPartyCode = data.code;
+    updateSystemStatus();
+
     setStatus(
       createResult,
       `Party ${data.code} created. Save the DJ key now and use it only in the DJ app.`,
@@ -693,6 +787,7 @@ createPartyBtn.addEventListener('click', async () => {
 
     partyCodeInput.value = data.code;
     setStatus(joinResult, `Party code ${data.code} copied into Guest Window input.`, 'info');
+    pushTimeline('success', `Party ${data.code} created.`);
   } catch (error) {
     if (error.status === 401) {
       authUser = null;
@@ -774,12 +869,14 @@ requestForm.addEventListener('submit', async (event) => {
 
     setStatus(requestResult, `Queued #${data.seqNo}: ${data.title} - ${data.artist}`, 'success');
 
-    const titleInput = document.getElementById('title');
-    const artistInput = document.getElementById('artist');
-    const urlInput = document.getElementById('appleMusicUrl');
-    titleInput.value = '';
-    artistInput.value = '';
-    urlInput.value = '';
+    guestRequestCount += 1;
+    guestLastRequest = `Last request: ${data.title} - ${data.artist}`;
+    updateGuestSummary();
+    pushTimeline('success', `Guest submitted #${data.seqNo}: ${data.title} - ${data.artist}`);
+
+    document.getElementById('title').value = '';
+    document.getElementById('artist').value = '';
+    document.getElementById('appleMusicUrl').value = '';
     appleSearchTermInput.value = '';
     appleSearchResults.textContent = '';
     toggleAppleSearchVisibility();
@@ -805,9 +902,16 @@ requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
   input.addEventListener('change', toggleAppleSearchVisibility);
 });
 
+clearTimelineBtn.addEventListener('click', () => {
+  eventTimeline.textContent = '';
+  pushTimeline('info', 'Timeline cleared.');
+});
+
 setApiBase(apiBase);
 setWindow('guest');
 toggleAppleSearchVisibility();
+updateGuestSummary();
+updateSystemStatus();
 
 (async () => {
   const backendOk = await checkBackendHealth();
@@ -820,6 +924,7 @@ toggleAppleSearchVisibility();
     setWindow('guest');
     partyCodeInput.value = codeFromUrl;
     setStatus(joinResult, `Party code ${codeFromUrl} loaded from QR link. Checking now...`, 'info');
+    pushTimeline('info', `QR party link opened for ${codeFromUrl}.`);
     await joinPartyByCode(codeFromUrl);
     return;
   }
