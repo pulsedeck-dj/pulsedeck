@@ -108,7 +108,8 @@ returns text
 language sql
 immutable
 as $$
-  select encode(digest(coalesce(p_text,''), 'sha256'), 'hex')
+  -- pgcrypto.digest expects bytea input
+  select encode(digest(convert_to(coalesce(p_text,''), 'utf8'), 'sha256'), 'hex')
 $$;
 
 create or replace function public.normalize_party_code(p_text text)
