@@ -94,6 +94,8 @@ const appleSearchTermInput = document.getElementById('appleSearchTerm');
 const appleSearchBtn = document.getElementById('appleSearchBtn');
 const appleSearchStatus = document.getElementById('appleSearchStatus');
 const appleSearchResults = document.getElementById('appleSearchResults');
+const songUrlInput = document.getElementById('songUrl');
+const songUrlSummary = document.querySelector('.advanced-link-block summary');
 
 const guestPartyCodeOut = document.getElementById('guestPartyCodeOut');
 const guestRequestCountOut = document.getElementById('guestRequestCountOut');
@@ -387,6 +389,14 @@ function readSelectedService() {
   return selected ? selected.value : '';
 }
 
+function hostnameMatches(hostnameInput, allowedHostInput) {
+  const hostname = String(hostnameInput || '').toLowerCase();
+  const allowedHost = String(allowedHostInput || '').toLowerCase();
+  if (!hostname || !allowedHost) return false;
+  if (hostname === allowedHost) return true;
+  return hostname.endsWith(`.${allowedHost}`);
+}
+
 function isValidSongUrl(urlText, service) {
   if (!urlText) return true;
 
@@ -399,11 +409,21 @@ function isValidSongUrl(urlText, service) {
 
   if (parsed.protocol !== 'https:') return false;
 
+  const hostname = parsed.hostname;
+
   if (service === 'Apple Music') {
-    return parsed.hostname.endsWith('music.apple.com');
+    return hostnameMatches(hostname, 'music.apple.com');
   }
 
-  return true;
+  if (service === 'Spotify') {
+    return hostnameMatches(hostname, 'spotify.com') || hostnameMatches(hostname, 'spotify.link');
+  }
+
+  if (service === 'YouTube') {
+    return hostnameMatches(hostname, 'youtube.com') || hostnameMatches(hostname, 'youtu.be');
+  }
+
+  return false;
 }
 
 function readPartyCodeFromUrl() {
@@ -677,10 +697,35 @@ function toggleAppleSearchVisibility() {
   }
 }
 
+function updateSongUrlUi() {
+  if (!songUrlInput) return;
+
+  const service = readSelectedService();
+
+  if (service === 'Apple Music') {
+    songUrlInput.placeholder = 'https://music.apple.com/...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Apple Music Link (Optional)';
+  } else if (service === 'Spotify') {
+    songUrlInput.placeholder = 'https://open.spotify.com/track/...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Spotify Link (Optional)';
+  } else if (service === 'YouTube') {
+    songUrlInput.placeholder = 'https://youtu.be/...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste YouTube Link (Optional)';
+  } else {
+    songUrlInput.placeholder = 'https://...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Song Link (Optional)';
+  }
+
+  const current = String(songUrlInput.value || '').trim();
+  if (current && !isValidSongUrl(current, service)) {
+    songUrlInput.value = '';
+  }
+}
+
 function fillRequestFieldsFromSearchResult(result) {
   document.getElementById('title').value = result.title || '';
   document.getElementById('artist').value = result.artist || '';
-  document.getElementById('appleMusicUrl').value = result.url || '';
+  if (songUrlInput) songUrlInput.value = result.url || '';
   setStatus(appleSearchStatus, `Selected ${result.title} - ${result.artist}`, 'success');
 }
 
@@ -693,7 +738,7 @@ async function submitSongRequest(input, options = {}) {
   const service = String(input?.service || '').trim();
   const title = String(input?.title || '').trim();
   const artist = String(input?.artist || '').trim();
-  const appleMusicUrl = String(input?.appleMusicUrl || '').trim();
+  const songUrl = String(input?.songUrl || '').trim();
 
   if (!ALLOWED_SERVICES.has(service)) {
     setStatus(requestResult, 'Choose a valid music service.', 'error');
@@ -710,8 +755,8 @@ async function submitSongRequest(input, options = {}) {
     return false;
   }
 
-  if (!isValidSongUrl(appleMusicUrl, service)) {
-    setStatus(requestResult, 'Song URL must be a valid HTTPS link.', 'error');
+  if (!isValidSongUrl(songUrl, service)) {
+    setStatus(requestResult, 'Song URL must be a valid HTTPS link for the selected service.', 'error');
     return false;
   }
 
@@ -731,7 +776,7 @@ async function submitSongRequest(input, options = {}) {
         service,
         title,
         artist,
-        appleMusicUrl
+        songUrl
       }
     });
 
@@ -753,7 +798,7 @@ async function submitSongRequest(input, options = {}) {
 
     document.getElementById('title').value = '';
     document.getElementById('artist').value = '';
-    document.getElementById('appleMusicUrl').value = '';
+    document.getElementById('songUrl').value = '';
     appleSearchTermInput.value = '';
     appleSearchResults.textContent = '';
     toggleAppleSearchVisibility();
@@ -824,7 +869,7 @@ function renderAppleSearchResults(items) {
           service: 'Apple Music',
           title: item.title,
           artist: item.artist,
-          appleMusicUrl: item.url
+          songUrl: item.url
         },
         { loading: true }
       );
@@ -1245,7 +1290,7 @@ requestForm.addEventListener('submit', async (event) => {
     service: readSelectedService(),
     title: String(document.getElementById('title').value || ''),
     artist: String(document.getElementById('artist').value || ''),
-    appleMusicUrl: String(document.getElementById('appleMusicUrl').value || '')
+    songUrl: String(document.getElementById('songUrl').value || '')
   });
 });
 
@@ -1261,7 +1306,10 @@ appleSearchTermInput.addEventListener('keydown', (event) => {
 });
 
 requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
-  input.addEventListener('change', toggleAppleSearchVisibility);
+  input.addEventListener('change', () => {
+    toggleAppleSearchVisibility();
+    updateSongUrlUi();
+  });
 });
 
 clearTimelineBtn.addEventListener('click', () => {
@@ -1269,6 +1317,8 @@ clearTimelineBtn.addEventListener('click', () => {
   pushTimeline('info', 'Timeline cleared.');
 });
 
+toggleAppleSearchVisibility();
+updateSongUrlUi();
 setApiBase(apiBase);
 const pageMode = readPageModeFromUrl();
 if (pageMode === 'guest') {

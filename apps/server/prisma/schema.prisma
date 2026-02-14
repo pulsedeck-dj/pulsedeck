@@ -55,7 +55,7 @@ model SongRequest {
   title          String
   artist         String
   service        String
-  appleMusicUrl  String?
+  songUrl        String?
   status         String           @default("queued")
   playedAt       DateTime?
   playedBy       String?

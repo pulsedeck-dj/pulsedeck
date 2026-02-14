@@ -69,6 +69,7 @@ function toPublicParty(party) {
 }
 
 function toRequestView(request, partyCode) {
+  const songUrl = request.songUrl || '';
   return {
     id: request.id,
     seqNo: request.seqNo,
@@ -76,12 +77,22 @@ function toRequestView(request, partyCode) {
     title: request.title,
     artist: request.artist,
     service: request.service,
-    appleMusicUrl: request.appleMusicUrl || '',
+    songUrl,
+    // Backwards-compat: older clients expect `appleMusicUrl` even for non-Apple services.
+    appleMusicUrl: songUrl,
     status: request.status || 'queued',
     playedAt: request.playedAt || null,
     playedBy: request.playedBy || '',
     createdAt: request.createdAt
   };
+}
+
+function hostnameMatches(hostnameInput, allowedHostInput) {
+  const hostname = String(hostnameInput || '').toLowerCase();
+  const allowedHost = String(allowedHostInput || '').toLowerCase();
+  if (!hostname || !allowedHost) return false;
+  if (hostname === allowedHost) return true;
+  return hostname.endsWith(`.${allowedHost}`);
 }
 
 function validateSongUrl(value, service) {
@@ -97,8 +108,14 @@ function validateSongUrl(value, service) {
 
   if (parsed.protocol !== 'https:') return null;
 
-  if (service === 'Apple Music' && !parsed.hostname.endsWith('music.apple.com')) {
-    return null;
+  const hostname = parsed.hostname;
+
+  if (service === 'Apple Music') {
+    if (!hostnameMatches(hostname, 'music.apple.com')) return null;
+  } else if (service === 'Spotify') {
+    if (!hostnameMatches(hostname, 'spotify.com') && !hostnameMatches(hostname, 'spotify.link')) return null;
+  } else if (service === 'YouTube') {
+    if (!hostnameMatches(hostname, 'youtube.com') && !hostnameMatches(hostname, 'youtu.be')) return null;
   }
 
   return parsed.toString().slice(0, 500);
@@ -294,8 +311,8 @@ export async function addSongRequest(codeInput, payloadInput, idempotencyKeyInpu
   if (!title || !artist || !service) return { error: 'invalid_payload' };
   if (!ALLOWED_SERVICES.has(service)) return { error: 'invalid_service' };
 
-  const appleMusicUrl = validateSongUrl(payloadInput?.appleMusicUrl, service);
-  if (appleMusicUrl === null) return { error: 'invalid_song_url' };
+  const songUrl = validateSongUrl(payloadInput?.songUrl ?? payloadInput?.appleMusicUrl, service);
+  if (songUrl === null) return { error: 'invalid_song_url' };
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -353,7 +370,7 @@ export async function addSongRequest(codeInput, payloadInput, idempotencyKeyInpu
               title,
               artist,
               service,
-              appleMusicUrl
+              songUrl
             }
           });
 

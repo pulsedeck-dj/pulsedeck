@@ -187,7 +187,7 @@ function sanitizeQueueEntry(entry) {
     title: String(entry?.title || 'Untitled').trim() || 'Untitled',
     artist: String(entry?.artist || 'Unknown').trim() || 'Unknown',
     service: String(entry?.service || 'Unknown').trim() || 'Unknown',
-    appleMusicUrl: String(entry?.appleMusicUrl || '').trim(),
+    songUrl: String(entry?.songUrl || entry?.appleMusicUrl || '').trim(),
     status,
     playedAt: entry?.playedAt ? String(entry.playedAt) : '',
     playedBy: String(entry?.playedBy || '').trim(),
@@ -378,10 +378,10 @@ function renderRequestList() {
     playedButton.textContent = 'Mark Played';
     playedButton.addEventListener('click', () => markRequestPlayed(entry.id, playedButton));
 
-    if (entry.appleMusicUrl) {
+    if (entry.songUrl) {
       const open = document.createElement('a');
       open.className = 'btn btn-ghost btn-mini';
-      open.href = entry.appleMusicUrl;
+      open.href = entry.songUrl;
       open.target = '_blank';
       open.rel = 'noreferrer noopener';
       open.textContent = 'Open Link';
@@ -489,10 +489,10 @@ function renderPlayedList() {
     undoButton.textContent = 'Undo';
     undoButton.addEventListener('click', () => markRequestQueued(entry.id, undoButton));
 
-    if (entry.appleMusicUrl) {
+    if (entry.songUrl) {
       const open = document.createElement('a');
       open.className = 'btn btn-ghost btn-mini';
-      open.href = entry.appleMusicUrl;
+      open.href = entry.songUrl;
       open.target = '_blank';
       open.rel = 'noreferrer noopener';
       open.textContent = 'Open Link';

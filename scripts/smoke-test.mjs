@@ -92,7 +92,7 @@ async function main() {
       service: 'Apple Music',
       title: 'Smoke Song',
       artist: 'Smoke Artist',
-      appleMusicUrl: 'https://music.apple.com/us/song/example/123456789'
+      songUrl: 'https://music.apple.com/us/song/example/123456789'
     }
   });
 

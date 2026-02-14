@@ -188,7 +188,7 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
     title: sanitizeText(request?.title, 120) || 'Untitled',
     artist: sanitizeText(request?.artist, 120) || 'Unknown',
     service: sanitizeText(request?.service, 30) || 'Unknown',
-    appleMusicUrl: sanitizeText(request?.appleMusicUrl, 500),
+    songUrl: sanitizeText(request?.songUrl || request?.appleMusicUrl, 500),
     status,
     playedAt,
     playedBy: sanitizeText(request?.playedBy, 80),
