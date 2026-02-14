@@ -40,6 +40,22 @@ function readInitialApiBase() {
   return normalizeApiBaseCandidate(detectDefaultApiBase());
 }
 
+function readSupabaseConfig() {
+  const url = String(window.PULSE_CONFIG?.supabaseUrl || '').trim();
+  const anonKey = String(window.PULSE_CONFIG?.supabaseAnonKey || '').trim();
+  if (!url || !anonKey) return null;
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return null;
+    parsed.hash = '';
+    parsed.search = '';
+    return { url: parsed.toString().replace(/\/+$/, ''), anonKey };
+  } catch {
+    return null;
+  }
+}
+
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'YouTube']);
 
@@ -65,6 +81,7 @@ const songUrlAutofillStatus = document.getElementById('songUrlAutofillStatus');
 
 let apiBase = readInitialApiBase();
 let activePartyCode = null;
+let supabaseClient = null;
 
 let joinDebounceTimer = null;
 let joinInFlight = false;
@@ -160,6 +177,61 @@ async function apiRequest(path, options = {}) {
   } finally {
     clear();
   }
+}
+
+function initSupabase() {
+  const cfg = readSupabaseConfig();
+  if (!cfg) return null;
+  if (!window.supabase || typeof window.supabase.createClient !== 'function') return null;
+
+  supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey, {
+    auth: { persistSession: false }
+  });
+
+  return supabaseClient;
+}
+
+async function supaJoinParty(code) {
+  if (!supabaseClient) throw new Error('Supabase not initialized');
+
+  const { data, error } = await supabaseClient.rpc('join_party', { p_code: code });
+  if (error) throw new Error(error.message || 'Join failed');
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.ok) throw new Error('Party not found');
+
+  return {
+    partyCode: String(row.party_code || code),
+    djActive: Boolean(row.dj_active),
+    expiresAt: row.expires_at ? String(row.expires_at) : null
+  };
+}
+
+async function supaSubmitRequest(code, payload) {
+  if (!supabaseClient) throw new Error('Supabase not initialized');
+
+  const { data, error } = await supabaseClient.rpc('submit_request', {
+    p_code: code,
+    p_service: payload.service,
+    p_title: payload.title,
+    p_artist: payload.artist,
+    p_song_url: payload.songUrl || '',
+    p_idempotency_key: payload.idempotencyKey || ''
+  });
+
+  if (error) throw new Error(error.message || 'Request failed');
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.id) throw new Error('Request failed');
+
+  return {
+    id: row.id,
+    seqNo: row.seq_no,
+    title: row.title,
+    artist: row.artist,
+    service: row.service,
+    songUrl: row.song_url || ''
+  };
 }
 
 function makeIdempotencyKey() {
@@ -269,46 +341,7 @@ function stopJoinPolling(message) {
 }
 
 function startJoinPolling(code) {
-  stopJoinPolling();
-
-  const maxAttempts = 60;
-  const intervalMs = 2000;
-
-  joinPollCode = code;
-  joinPollAttempts = 0;
-  joinPollInFlight = false;
-
-  if (stopCheckingBtn) stopCheckingBtn.classList.remove('hidden');
-
-  joinPollTimer = setInterval(async () => {
-    if (joinPollInFlight) return;
-    joinPollInFlight = true;
-    joinPollAttempts += 1;
-
-    try {
-      const data = await apiRequest(`/api/parties/${code}/join`, { method: 'POST', timeoutMs: 8000 });
-
-      if (data.djActive) {
-        stopJoinPolling();
-        activePartyCode = code;
-        revealPanel(requestPanel);
-        setStatus(joinResult, `DJ is live. Connected to party ${code}.`, 'success');
-        if (appleSearchTermInput) appleSearchTermInput.focus();
-        return;
-      }
-
-      if (joinPollAttempts >= maxAttempts) {
-        stopJoinPolling('Still waiting for DJ. Please ask the DJ to open the DJ app.');
-        return;
-      }
-
-      setStatus(joinResult, `Waiting for DJ to connect... (${joinPollAttempts}/${maxAttempts})`, 'info');
-    } catch (error) {
-      stopJoinPolling(error.message || 'Could not check DJ status.');
-    } finally {
-      joinPollInFlight = false;
-    }
-  }, intervalMs);
+  pollJoinStatus(code);
 }
 
 async function joinPartyByCode(code) {
@@ -322,7 +355,9 @@ async function joinPartyByCode(code) {
   setStatus(joinResult, `Checking party ${code}...`, 'info');
 
   try {
-    const data = await apiRequest(`/api/parties/${code}/join`, { method: 'POST' });
+    const data = supabaseClient
+      ? await supaJoinParty(code)
+      : await apiRequest(`/api/parties/${code}/join`, { method: 'POST' });
 
     if (!data.djActive) {
       activePartyCode = null;
@@ -369,6 +404,50 @@ function scheduleAutoJoin(code) {
       joinInFlight = false;
     }
   }, 450);
+}
+
+async function pollJoinStatus(code) {
+  const maxAttempts = 60;
+  const intervalMs = 2000;
+
+  stopJoinPolling();
+  joinPollCode = code;
+  joinPollAttempts = 0;
+  joinPollInFlight = false;
+
+  if (stopCheckingBtn) stopCheckingBtn.classList.remove('hidden');
+
+  joinPollTimer = setInterval(async () => {
+    if (joinPollInFlight) return;
+    joinPollInFlight = true;
+    joinPollAttempts += 1;
+
+    try {
+      const data = supabaseClient
+        ? await supaJoinParty(code)
+        : await apiRequest(`/api/parties/${code}/join`, { method: 'POST', timeoutMs: 8000 });
+
+      if (data.djActive) {
+        stopJoinPolling();
+        activePartyCode = code;
+        revealPanel(requestPanel);
+        setStatus(joinResult, `DJ is live. Connected to party ${code}.`, 'success');
+        if (appleSearchTermInput) appleSearchTermInput.focus();
+        return;
+      }
+
+      if (joinPollAttempts >= maxAttempts) {
+        stopJoinPolling('Still waiting for DJ. Please ask the DJ to open the DJ app.');
+        return;
+      }
+
+      setStatus(joinResult, `Waiting for DJ to connect... (${joinPollAttempts}/${maxAttempts})`, 'info');
+    } catch (error) {
+      stopJoinPolling(error.message || 'Could not check DJ status.');
+    } finally {
+      joinPollInFlight = false;
+    }
+  }, intervalMs);
 }
 
 function fillRequestFieldsFromSearchResult(result) {
@@ -516,20 +595,25 @@ async function submitSongRequest(input, options = {}) {
   setStatus(requestResult, 'Submitting request to DJ queue...', 'info');
 
   try {
-    const data = await apiRequest(`/api/parties/${activePartyCode}/requests`, {
-      method: 'POST',
-      headers: {
-        'X-Idempotency-Key': makeIdempotencyKey()
-      },
-      body: {
-        service,
-        title,
-        artist,
-        songUrl
-      }
-    });
+    const idempotencyKey = makeIdempotencyKey();
 
-    setStatus(requestResult, `Queued #${data.seqNo}: ${data.title} - ${data.artist}`, 'success');
+    const data = supabaseClient
+      ? await supaSubmitRequest(activePartyCode, { service, title, artist, songUrl, idempotencyKey })
+      : await apiRequest(`/api/parties/${activePartyCode}/requests`, {
+          method: 'POST',
+          headers: {
+            'X-Idempotency-Key': idempotencyKey
+          },
+          body: {
+            service,
+            title,
+            artist,
+            songUrl
+          }
+        });
+
+    const seqNo = data.seqNo ?? data.seq_no;
+    setStatus(requestResult, `Queued #${seqNo}: ${data.title} - ${data.artist}`, 'success');
 
     const titleInput = document.getElementById('title');
     const artistInput = document.getElementById('artist');
@@ -664,7 +748,9 @@ songUrlAutofillBtn.addEventListener('click', async () => {
 toggleAppleSearchVisibility();
 updateSongUrlUi();
 
-if (!apiBase) {
+initSupabase();
+
+if (!supabaseClient && !apiBase) {
   setStatus(joinResult, 'This request site is not connected yet. Ask the DJ to finish setup.', 'error');
 }
 
@@ -675,4 +761,3 @@ if (PARTY_CODE_PATTERN.test(codeFromUrl)) {
   lastAutoJoinCode = codeFromUrl;
   joinPartyByCode(codeFromUrl);
 }
-

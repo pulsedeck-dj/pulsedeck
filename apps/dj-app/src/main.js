@@ -3,14 +3,24 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
+const { createClient } = require('@supabase/supabase-js');
 const { io } = require('socket.io-client');
 
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const DEFAULT_GUEST_WEB_BASE = 'https://pulsedeck-dj.github.io/pulsedeck/guest.html';
 const HEARTBEAT_INTERVAL_MS = 10000;
+const POLL_INTERVAL_MS = 2000;
+
+// Public Supabase project values (anon key is safe to embed).
+const DEFAULT_SUPABASE_URL = 'https://dliaiwwudygtbagzhcxb.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsaWFpd3d1ZHlndGJhZ3poY3hiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwNDI2NTksImV4cCI6MjA4NjYxODY1OX0.3uyJh-HyDC2hGb2NRjlEjcu1bXW1unK5iWdGNS9U6-c';
 
 const DEFAULT_CONFIG = {
+  // Legacy server mode (still supported). Supabase mode is used when configured.
   apiBase: 'http://localhost:4000',
+  supabaseUrl: DEFAULT_SUPABASE_URL,
+  supabaseAnonKey: DEFAULT_SUPABASE_ANON_KEY,
   partyCode: '',
   djKey: '',
   guestWebBase: DEFAULT_GUEST_WEB_BASE,
@@ -93,6 +103,8 @@ function loadConfig() {
 
   return {
     apiBase: sanitizeText(parsed.apiBase || DEFAULT_CONFIG.apiBase, 200),
+    supabaseUrl: sanitizeText(parsed.supabaseUrl || DEFAULT_CONFIG.supabaseUrl, 220),
+    supabaseAnonKey: sanitizeText(parsed.supabaseAnonKey || DEFAULT_CONFIG.supabaseAnonKey, 4096),
     partyCode: normalizePartyCode(parsed.partyCode || ''),
     djKey: sanitizeText(parsed.djKey || '', 80),
     guestWebBase: sanitizeWebUrl(parsed.guestWebBase || DEFAULT_CONFIG.guestWebBase),
@@ -103,6 +115,8 @@ function loadConfig() {
 function saveConfig(input) {
   const normalized = {
     apiBase: sanitizeText(input?.apiBase || DEFAULT_CONFIG.apiBase, 200),
+    supabaseUrl: sanitizeText(input?.supabaseUrl || DEFAULT_CONFIG.supabaseUrl, 220),
+    supabaseAnonKey: sanitizeText(input?.supabaseAnonKey || DEFAULT_CONFIG.supabaseAnonKey, 4096),
     partyCode: normalizePartyCode(input?.partyCode || ''),
     djKey: sanitizeText(input?.djKey || '', 80),
     guestWebBase: sanitizeWebUrl(input?.guestWebBase || DEFAULT_CONFIG.guestWebBase),
@@ -113,6 +127,27 @@ function saveConfig(input) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf-8');
   return normalized;
+}
+
+function isSupabaseUrl(value) {
+  const text = String(value || '').trim().toLowerCase();
+  return Boolean(text && text.includes('.supabase.co'));
+}
+
+function buildSupabaseClient(config) {
+  const url = sanitizeText(config?.supabaseUrl || DEFAULT_SUPABASE_URL, 220).replace(/\/+$/, '');
+  const anonKey = sanitizeText(config?.supabaseAnonKey || DEFAULT_SUPABASE_ANON_KEY, 4096);
+
+  if (!/^https:\/\//.test(url)) {
+    throw new Error('Supabase URL must start with https://');
+  }
+  if (!anonKey) {
+    throw new Error('Supabase anon key is missing.');
+  }
+
+  return createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
 }
 
 function buildGuestJoinUrl(guestWebBaseInput, partyCodeInput) {
@@ -188,10 +223,10 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
     title: sanitizeText(request?.title, 120) || 'Untitled',
     artist: sanitizeText(request?.artist, 120) || 'Unknown',
     service: sanitizeText(request?.service, 30) || 'Unknown',
-    songUrl: sanitizeText(request?.songUrl || request?.appleMusicUrl, 500),
+    songUrl: sanitizeText(request?.songUrl || request?.song_url || request?.appleMusicUrl, 500),
     status,
     playedAt,
-    playedBy: sanitizeText(request?.playedBy, 80),
+    playedBy: sanitizeText(request?.playedBy || request?.played_by, 80),
     createdAt
   };
 }
@@ -252,6 +287,23 @@ function emitQueueUpsert(connection, requestInput, source = 'realtime', options 
 }
 
 async function syncQueue(connection) {
+  if (connection.mode === 'supabase') {
+    const { data, error } = await connection.supabase.rpc('dj_list_requests', {
+      p_code: connection.partyCode,
+      p_session_id: connection.sessionId,
+      p_dj_token: connection.token
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Failed to load requests');
+    }
+
+    const requests = Array.isArray(data) ? data : [];
+    const replaced = emitQueueReplace(connection, requests);
+    log('info', `Queue synced (${replaced.length} request(s)).`);
+    return;
+  }
+
   const response = await axios.get(`${connection.apiBase}/api/parties/${connection.partyCode}/requests`, {
     headers: {
       'X-DJ-Session-ID': connection.sessionId,
@@ -273,6 +325,10 @@ async function disconnectDj(reason = 'Disconnected') {
 
   if (liveConnection.heartbeatTimer) {
     clearInterval(liveConnection.heartbeatTimer);
+  }
+
+  if (liveConnection.pollTimer) {
+    clearInterval(liveConnection.pollTimer);
   }
 
   if (liveConnection.socket) {
@@ -302,35 +358,74 @@ async function connectDj(configInput) {
       throw new Error('DJ key is required.');
     }
 
-    const apiBase = config.apiBase.replace(/\/+$/, '');
-    if (!/^https?:\/\//.test(apiBase)) {
-      throw new Error('API Base URL must start with http:// or https://');
-    }
+    const useSupabase = isSupabaseUrl(config.supabaseUrl) || isSupabaseUrl(config.apiBase);
 
     setStatus('connecting', 'Claiming DJ role...');
     log('info', `Claiming DJ role for ${partyCode}...`);
 
-    const claim = await axios.post(
-      `${apiBase}/api/parties/${partyCode}/claim-dj`,
-      {
-        djKey: config.djKey,
-        deviceName: config.deviceName
-      },
-      {
-        timeout: 9000
-      }
-    );
+    let connection;
 
-    const connection = {
-      apiBase,
-      partyCode,
-      sessionId: claim.data.sessionId,
-      token: claim.data.token,
-      expiresAt: claim.data.expiresAt,
-      requestIds: new Set(),
-      socket: null,
-      heartbeatTimer: null
-    };
+    if (useSupabase) {
+      const supabase = buildSupabaseClient(config);
+      const { data, error } = await supabase.rpc('claim_dj', {
+        p_code: partyCode,
+        p_dj_key: config.djKey,
+        p_device_name: config.deviceName
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to claim DJ role');
+      }
+
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row?.session_id || !row?.dj_token) {
+        throw new Error('Failed to claim DJ role');
+      }
+
+      connection = {
+        mode: 'supabase',
+        supabase,
+        apiBase: '',
+        partyCode,
+        sessionId: String(row.session_id),
+        token: String(row.dj_token),
+        expiresAt: row.expires_at ? String(row.expires_at) : '',
+        requestIds: new Set(),
+        socket: null,
+        heartbeatTimer: null,
+        pollTimer: null
+      };
+    } else {
+      const apiBase = config.apiBase.replace(/\/+$/, '');
+      if (!/^https?:\/\//.test(apiBase)) {
+        throw new Error('API Base URL must start with http:// or https://');
+      }
+
+      const claim = await axios.post(
+        `${apiBase}/api/parties/${partyCode}/claim-dj`,
+        {
+          djKey: config.djKey,
+          deviceName: config.deviceName
+        },
+        {
+          timeout: 9000
+        }
+      );
+
+      connection = {
+        mode: 'api',
+        supabase: null,
+        apiBase,
+        partyCode,
+        sessionId: claim.data.sessionId,
+        token: claim.data.token,
+        expiresAt: claim.data.expiresAt,
+        requestIds: new Set(),
+        socket: null,
+        heartbeatTimer: null,
+        pollTimer: null
+      };
+    }
 
     liveConnection = connection;
     emit({ type: 'queue:clear', at: new Date().toISOString() });
@@ -340,70 +435,92 @@ async function connectDj(configInput) {
 
     await syncQueue(connection);
 
-    const socket = io(apiBase, {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionAttempts: Infinity
-    });
-
-    connection.socket = socket;
-
-    socket.on('connect', () => {
-      setStatus('connecting', 'Socket connected. Registering listener...');
-      socket.emit('register_dj', {
-        partyCode: connection.partyCode,
-        sessionId: connection.sessionId,
-        token: connection.token
-      });
-    });
-
-    socket.on('register_ok', async () => {
-      setStatus('connected', `Live queue ready for party ${connection.partyCode}`);
-      log('success', `Realtime connected for party ${connection.partyCode}`);
-
-      try {
-        await syncQueue(connection);
-      } catch (error) {
-        log('warning', `Sync warning: ${error.response?.data?.error || error.message}`);
-      }
-    });
-
-    socket.on('register_error', (payload) => {
-      setStatus('error', 'Socket registration failed');
-      log('error', `Socket registration failed: ${payload?.error || 'unknown error'}`);
-    });
-
-    socket.on('request:new', (request) => {
-      emitQueueUpsert(connection, request, 'realtime', { announce: true });
-    });
-
-    socket.on('request:update', (request) => {
-      emitQueueUpsert(connection, request, 'update', { announce: true });
-    });
-
-    socket.on('disconnect', () => {
-      setStatus('connecting', 'Socket disconnected. Reconnecting...');
-      log('warning', 'Socket disconnected. Waiting for reconnect...');
-    });
-
     connection.heartbeatTimer = setInterval(async () => {
       try {
-        await axios.post(
-          `${connection.apiBase}/api/parties/${connection.partyCode}/heartbeat`,
-          {
-            sessionId: connection.sessionId
-          },
-          {
-            headers: {
-              'X-DJ-Token': connection.token
+        if (connection.mode === 'supabase') {
+          const { error } = await connection.supabase.rpc('dj_heartbeat', {
+            p_code: connection.partyCode,
+            p_session_id: connection.sessionId,
+            p_dj_token: connection.token
+          });
+          if (error) throw new Error(error.message || 'Heartbeat failed');
+        } else {
+          await axios.post(
+            `${connection.apiBase}/api/parties/${connection.partyCode}/heartbeat`,
+            {
+              sessionId: connection.sessionId
             },
-            timeout: 9000
-          }
-        );
+            {
+              headers: {
+                'X-DJ-Token': connection.token
+              },
+              timeout: 9000
+            }
+          );
+        }
       } catch (error) {
         log('warning', `Heartbeat warning: ${error.response?.data?.error || error.message}`);
       }
     }, HEARTBEAT_INTERVAL_MS);
+
+    if (connection.mode === 'supabase') {
+      setStatus('connected', `Live queue ready for party ${connection.partyCode}`);
+      log('success', `Connected (Supabase) for party ${connection.partyCode}`);
+
+      connection.pollTimer = setInterval(async () => {
+        try {
+          await syncQueue(connection);
+        } catch (error) {
+          log('warning', `Sync warning: ${error.message || error}`);
+        }
+      }, POLL_INTERVAL_MS);
+    } else {
+      const socket = io(connection.apiBase, {
+        transports: ['websocket'],
+        reconnection: true,
+        reconnectionAttempts: Infinity
+      });
+
+      connection.socket = socket;
+
+      socket.on('connect', () => {
+        setStatus('connecting', 'Socket connected. Registering listener...');
+        socket.emit('register_dj', {
+          partyCode: connection.partyCode,
+          sessionId: connection.sessionId,
+          token: connection.token
+        });
+      });
+
+      socket.on('register_ok', async () => {
+        setStatus('connected', `Live queue ready for party ${connection.partyCode}`);
+        log('success', `Realtime connected for party ${connection.partyCode}`);
+
+        try {
+          await syncQueue(connection);
+        } catch (error) {
+          log('warning', `Sync warning: ${error.response?.data?.error || error.message}`);
+        }
+      });
+
+      socket.on('register_error', (payload) => {
+        setStatus('error', 'Socket registration failed');
+        log('error', `Socket registration failed: ${payload?.error || 'unknown error'}`);
+      });
+
+      socket.on('request:new', (request) => {
+        emitQueueUpsert(connection, request, 'realtime', { announce: true });
+      });
+
+      socket.on('request:update', (request) => {
+        emitQueueUpsert(connection, request, 'update', { announce: true });
+      });
+
+      socket.on('disconnect', () => {
+        setStatus('connecting', 'Socket disconnected. Reconnecting...');
+        log('warning', 'Socket disconnected. Waiting for reconnect...');
+      });
+    }
 
     return {
       ok: true,
@@ -427,6 +544,20 @@ async function updateRequestStatus(requestIdInput, nextStatus) {
   }
 
   const status = nextStatus === 'played' ? 'played' : 'queued';
+
+  if (liveConnection.mode === 'supabase') {
+    const fn = status === 'played' ? 'dj_mark_played' : 'dj_mark_queued';
+    const { error } = await liveConnection.supabase.rpc(fn, {
+      p_code: liveConnection.partyCode,
+      p_request_id: requestId,
+      p_session_id: liveConnection.sessionId,
+      p_dj_token: liveConnection.token
+    });
+    if (error) throw new Error(error.message || 'Update failed');
+
+    await syncQueue(liveConnection);
+    return { ok: true };
+  }
 
   const response = await axios.post(
     `${liveConnection.apiBase}/api/parties/${liveConnection.partyCode}/requests/${requestId}/${status}`,
@@ -483,6 +614,9 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   if (liveConnection?.heartbeatTimer) {
     clearInterval(liveConnection.heartbeatTimer);
+  }
+  if (liveConnection?.pollTimer) {
+    clearInterval(liveConnection.pollTimer);
   }
   if (liveConnection?.socket) {
     liveConnection.socket.disconnect();

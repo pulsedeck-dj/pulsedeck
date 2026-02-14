@@ -59,22 +59,23 @@ npm run dev:dj
 
 ## Production Deployment (Recommended)
 
-Use **GitHub + Render**:
-- GitHub: source code + downloadable DJ app releases
-- Render: managed Postgres + hosted API/web
+Use **GitHub Pages + Supabase (Free Tier)**:
+- GitHub Pages: public guest request website
+- Supabase: Postgres + Auth + RPC backend (free tier)
+- GitHub Releases: downloadable DJ app `.dmg`
 
-This repo includes `render.yaml` so Render can provision DB + API service.
+### Supabase Setup (Required)
+1. Create a Supabase project.
+2. Open Supabase **SQL Editor** and run `supabase/schema.sql`.
+3. Copy your Supabase values (Project URL and anon key).
+4. In GitHub repo Settings → Secrets and variables → Actions → Variables:
+   - `PULSE_SUPABASE_URL` = `https://YOUR_PROJECT.supabase.co`
+   - `PULSE_SUPABASE_ANON_KEY` = `YOUR_ANON_KEY`
+5. Re-run GitHub Actions workflow **Deploy Web To GitHub Pages**.
 
-### Deploy Steps
-1. Push this repo to `main` on GitHub.
-2. In Render, create a new Blueprint and point it to this repo.
-3. Render will read `render.yaml` and create:
-- `pulsedeck-db` (Postgres)
-- `pulsedeck` (Node web service)
-4. Set `WEB_ORIGIN` in Render env to your final web URL (e.g. `https://pulsedeck.onrender.com`).
-5. Optional: add `APPLE_MUSIC_DEVELOPER_TOKEN` for full Apple Music catalog search (otherwise it falls back to iTunes Search).
+Guest portal (simple): `.../guest.html`
 
-The server hosts the web app in production, so one URL serves both frontend and API.
+Optional: you can still deploy `apps/server` (Node) to a host, but the Supabase path is the default for public use.
 
 ## DJ App Download For Users
 

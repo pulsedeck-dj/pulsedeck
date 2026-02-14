@@ -40,6 +40,22 @@ function readInitialApiBase() {
   return normalizeApiBaseCandidate(detectDefaultApiBase());
 }
 
+function readSupabaseConfig() {
+  const url = String(window.PULSE_CONFIG?.supabaseUrl || '').trim();
+  const anonKey = String(window.PULSE_CONFIG?.supabaseAnonKey || '').trim();
+  if (!url || !anonKey) return null;
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return null;
+    parsed.hash = '';
+    parsed.search = '';
+    return { url: parsed.toString().replace(/\/+$/, ''), anonKey };
+  } catch {
+    return null;
+  }
+}
+
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const AUTH_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'YouTube']);
@@ -124,6 +140,7 @@ let activeWindow = 'guest';
 let activePartyCode = null;
 let authToken = window.localStorage.getItem(AUTH_TOKEN_KEY) || '';
 let authUser = null;
+let supabaseClient = null;
 let backendReachable = false;
 let backendChecked = false;
 let lastCreatedPartyCode = '';
@@ -229,6 +246,12 @@ function setWindow(windowName) {
 }
 
 function updateEffectiveApiBaseLabel() {
+  if (supabaseClient) {
+    const cfg = readSupabaseConfig();
+    effectiveApiBase.textContent = cfg ? `Supabase: ${cfg.url}` : 'Supabase configured';
+    return;
+  }
+
   effectiveApiBase.textContent = apiBase || 'Not configured';
 }
 
@@ -320,7 +343,7 @@ function renderGuestRecentRequests() {
 }
 
 function updateSystemStatus() {
-  if (!apiBase) {
+  if (!apiBase && !supabaseClient) {
     sysBackendValue.textContent = 'Not configured';
   } else if (!backendChecked) {
     sysBackendValue.textContent = 'Checking...';
@@ -331,6 +354,18 @@ function updateSystemStatus() {
   sysAuthValue.textContent = authUser ? `Signed in: ${authUser.email}` : 'Signed out';
   sysPartyValue.textContent = lastCreatedPartyCode || '------';
   sysGuestValue.textContent = activePartyCode ? `Joined: ${activePartyCode}` : 'Not joined';
+}
+
+function initSupabase() {
+  const cfg = readSupabaseConfig();
+  if (!cfg) return null;
+  if (!window.supabase || typeof window.supabase.createClient !== 'function') return null;
+
+  supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey, {
+    auth: { persistSession: true, autoRefreshToken: true }
+  });
+
+  return supabaseClient;
 }
 
 function setApiBase(nextValue) {
@@ -459,8 +494,8 @@ function setAuthToken(token) {
 }
 
 function setAuthUi() {
-  const isSignedIn = Boolean(authUser && authToken);
-  const backendReady = Boolean(apiBase);
+  const isSignedIn = supabaseClient ? Boolean(authUser) : Boolean(authUser && authToken);
+  const backendReady = Boolean(apiBase || supabaseClient);
   createPartyBtn.disabled = !isSignedIn || !backendReady;
 
   if (isSignedIn) {
@@ -589,6 +624,16 @@ async function apiRequest(path, options = {}) {
 }
 
 async function checkBackendHealth() {
+  if (supabaseClient) {
+    backendChecked = true;
+    backendReachable = true;
+    setStatus(backendStatus, 'Backend connected (Supabase).', 'success');
+    setStatus(apiBaseConfigStatus, 'Supabase configured via site config.', 'success');
+    updateEffectiveApiBaseLabel();
+    updateSystemStatus();
+    return true;
+  }
+
   if (!apiBase) {
     backendChecked = false;
     backendReachable = false;
@@ -619,6 +664,23 @@ async function checkBackendHealth() {
 }
 
 async function refreshAuthIdentity() {
+  if (supabaseClient) {
+    try {
+      const { data } = await supabaseClient.auth.getUser();
+      authUser = data?.user
+        ? {
+            id: data.user.id,
+            email: data.user.email
+          }
+        : null;
+    } catch {
+      authUser = null;
+    }
+
+    setAuthUi();
+    return;
+  }
+
   if (!authToken || !apiBase) {
     authUser = null;
     setAuthUi();
@@ -644,6 +706,42 @@ async function submitAuth(mode) {
     .trim()
     .toLowerCase();
   const password = String(authPasswordInput.value || '').trim();
+
+  if (supabaseClient) {
+    if (!AUTH_EMAIL_PATTERN.test(email)) {
+      setStatus(authResult, 'Enter a valid email address.', 'error');
+      return;
+    }
+
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      setStatus(authResult, `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`, 'error');
+      return;
+    }
+
+    setButtonsLoading([registerBtn, loginBtn], true);
+    setStatus(authResult, mode === 'register' ? 'Creating account...' : 'Signing in...', 'info');
+
+    try {
+      if (mode === 'register') {
+        const { error } = await supabaseClient.auth.signUp({ email, password });
+        if (error) throw new Error(error.message || 'Sign up failed');
+      } else {
+        const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) throw new Error(error.message || 'Sign in failed');
+      }
+
+      authPasswordInput.value = '';
+      await refreshAuthIdentity();
+      setStatus(authResult, mode === 'register' ? 'Account created and signed in.' : 'Signed in.', 'success');
+      pushTimeline('success', `DJ ${mode === 'register' ? 'registered' : 'signed in'}: ${email}`);
+    } catch (error) {
+      setStatus(authResult, error.message || 'Authentication failed.', 'error');
+    } finally {
+      setButtonsLoading([registerBtn, loginBtn], false);
+    }
+
+    return;
+  }
 
   if (!apiBase) {
     setStatus(authResult, 'Backend is not configured. Open Setup Window first.', 'error');
@@ -1205,7 +1303,14 @@ authEmailInput.addEventListener('blur', () => {
     .toLowerCase();
 });
 
-logoutBtn.addEventListener('click', () => {
+logoutBtn.addEventListener('click', async () => {
+  if (supabaseClient) {
+    try {
+      await supabaseClient.auth.signOut();
+    } catch {
+      // ignore
+    }
+  }
   authUser = null;
   setAuthToken('');
   setAuthUi();
@@ -1227,7 +1332,15 @@ createPartyBtn.addEventListener('click', async () => {
   setStatus(createResult, 'Generating secure party credentials...', 'info');
 
   try {
-    const data = await apiRequest('/api/parties', { method: 'POST', auth: true });
+    let data;
+    if (supabaseClient) {
+      const { data: rpcData, error } = await supabaseClient.rpc('create_party');
+      if (error) throw new Error(error.message || 'Failed to create party');
+      const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+      data = { code: row.code, djKey: row.dj_key };
+    } else {
+      data = await apiRequest('/api/parties', { method: 'POST', auth: true });
+    }
     partyCodeOut.textContent = data.code;
     djKeyOut.textContent = data.djKey;
     revealPanel(djSecrets);
@@ -1255,7 +1368,7 @@ createPartyBtn.addEventListener('click', async () => {
     setStatus(createResult, error.message || 'Failed to create party.', 'error');
   } finally {
     createPartyBtn.textContent = 'Create Party';
-    createPartyBtn.disabled = !(authUser && authToken && apiBase);
+    createPartyBtn.disabled = supabaseClient ? !authUser : !(authUser && authToken && apiBase);
   }
 });
 
@@ -1374,6 +1487,7 @@ clearTimelineBtn.addEventListener('click', () => {
 
 toggleAppleSearchVisibility();
 updateSongUrlUi();
+initSupabase();
 setApiBase(apiBase);
 const pageMode = readPageModeFromUrl();
 if (pageMode === 'guest') {
@@ -1402,7 +1516,7 @@ updateSystemStatus();
     return;
   }
 
-  if (!apiBase) {
+  if (!apiBase && !supabaseClient) {
     setWindow('setup');
   }
 })();
