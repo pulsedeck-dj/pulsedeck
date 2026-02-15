@@ -654,6 +654,48 @@ async function fetchJson(url, { timeoutMs = 9000 } = {}) {
   }
 }
 
+async function jsonp(urlInput, { timeoutMs = 9000, callbackParam = 'callback' } = {}) {
+  const url = new URL(String(urlInput || '').trim());
+  const callbackName = `__pulse_jsonp_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+  url.searchParams.set(callbackParam, callbackName);
+
+  return await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    let done = false;
+
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      try {
+        delete window[callbackName];
+      } catch {
+        // ignore
+      }
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('Request timed out. Please retry.'));
+    }, timeoutMs);
+
+    window[callbackName] = (data) => {
+      clearTimeout(timer);
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(new Error('Network error. Please retry.'));
+    };
+
+    script.src = url.toString();
+    document.head.appendChild(script);
+  });
+}
+
 async function itunesSongSearch(term, limit = 8) {
   const q = String(term || '').trim();
   if (q.length < 2) return [];
@@ -665,7 +707,8 @@ async function itunesSongSearch(term, limit = 8) {
   url.searchParams.set('country', 'US');
   url.searchParams.set('limit', String(Math.max(1, Math.min(12, Number(limit) || 8))));
 
-  const data = await fetchJson(url.toString(), { timeoutMs: 9000 });
+  // iTunes Search API doesn't send CORS headers, so use JSONP.
+  const data = await jsonp(url.toString(), { timeoutMs: 9000, callbackParam: 'callback' });
   const rows = Array.isArray(data?.results) ? data.results : [];
 
   return rows
