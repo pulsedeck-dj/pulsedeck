@@ -31,6 +31,27 @@ const DEFAULT_CONFIG = {
 let mainWindow = null;
 let liveConnection = null;
 
+function summarizeQueueForLog(requests) {
+  const list = Array.isArray(requests) ? requests : [];
+  let queued = 0;
+  let played = 0;
+  let rejected = 0;
+
+  for (const r of list) {
+    const status = String(r?.status || 'queued').trim().toLowerCase();
+    if (status === 'played') played += 1;
+    else if (status === 'rejected') rejected += 1;
+    else queued += 1;
+  }
+
+  return {
+    total: list.length,
+    queued,
+    played,
+    rejected
+  };
+}
+
 function configPath() {
   return path.join(app.getPath('userData'), 'config.json');
 }
@@ -325,7 +346,21 @@ async function syncQueue(connection) {
 
     const requests = Array.isArray(data) ? data : [];
     const replaced = emitQueueReplace(connection, requests);
-    log('info', `Queue synced (${replaced.length} request(s)).`);
+
+    // Polling runs frequently; only log if something changed or if this is the first sync.
+    const summary = summarizeQueueForLog(replaced);
+    const prev = connection.lastQueueSummary;
+    const shouldLog =
+      !prev ||
+      prev.total !== summary.total ||
+      prev.queued !== summary.queued ||
+      prev.played !== summary.played ||
+      prev.rejected !== summary.rejected;
+
+    connection.lastQueueSummary = summary;
+    if (shouldLog) {
+      log('info', `Queue synced (${summary.total} total, ${summary.queued} queued).`);
+    }
     return;
   }
 
@@ -339,7 +374,19 @@ async function syncQueue(connection) {
 
   const requests = Array.isArray(response.data) ? response.data : [];
   const replaced = emitQueueReplace(connection, requests);
-  log('info', `Queue synced (${replaced.length} request(s)).`);
+  const summary = summarizeQueueForLog(replaced);
+  const prev = connection.lastQueueSummary;
+  const shouldLog =
+    !prev ||
+    prev.total !== summary.total ||
+    prev.queued !== summary.queued ||
+    prev.played !== summary.played ||
+    prev.rejected !== summary.rejected;
+
+  connection.lastQueueSummary = summary;
+  if (shouldLog) {
+    log('info', `Queue synced (${summary.total} total, ${summary.queued} queued).`);
+  }
 }
 
 async function disconnectDj(reason = 'Disconnected') {
@@ -416,6 +463,7 @@ async function connectDj(configInput) {
         token: String(row.dj_token),
         expiresAt: row.expires_at ? String(row.expires_at) : '',
         requestIds: new Set(),
+        lastQueueSummary: null,
         socket: null,
         heartbeatTimer: null,
         pollTimer: null
@@ -446,6 +494,7 @@ async function connectDj(configInput) {
         token: claim.data.token,
         expiresAt: claim.data.expiresAt,
         requestIds: new Set(),
+        lastQueueSummary: null,
         socket: null,
         heartbeatTimer: null,
         pollTimer: null
