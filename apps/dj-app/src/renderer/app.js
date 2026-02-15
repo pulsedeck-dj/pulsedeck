@@ -1,6 +1,5 @@
 const partyCodeInput = document.getElementById('partyCode');
 const djKeyInput = document.getElementById('djKey');
-const deviceNameInput = document.getElementById('deviceName');
 
 const saveBtn = document.getElementById('saveBtn');
 const connectBtn = document.getElementById('connectBtn');
@@ -631,15 +630,13 @@ function renderStage() {
 function readFormConfig() {
   return {
     partyCode: normalizePartyCode(partyCodeInput.value),
-    djKey: String(djKeyInput.value || '').trim(),
-    deviceName: String(deviceNameInput.value || '').trim()
+    djKey: String(djKeyInput.value || '').trim()
   };
 }
 
 function writeFormConfig(config) {
   partyCodeInput.value = config.partyCode || '';
   djKeyInput.value = config.djKey || '';
-  deviceNameInput.value = config.deviceName || '';
 }
 
 function setQrVisible(visible) {

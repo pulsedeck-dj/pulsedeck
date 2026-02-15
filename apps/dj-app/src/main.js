@@ -24,7 +24,8 @@ const DEFAULT_CONFIG = {
   partyCode: '',
   djKey: '',
   guestWebBase: DEFAULT_GUEST_WEB_BASE,
-  deviceName: 'DJ-Macbook'
+  // Keep a stable, non-user-configured device name for session attribution.
+  deviceName: 'PulseDeck DJ'
 };
 
 let mainWindow = null;
@@ -107,8 +108,7 @@ function loadConfig() {
     supabaseAnonKey: sanitizeText(parsed.supabaseAnonKey || DEFAULT_CONFIG.supabaseAnonKey, 4096),
     partyCode: normalizePartyCode(parsed.partyCode || ''),
     djKey: sanitizeText(parsed.djKey || '', 80),
-    guestWebBase: sanitizeWebUrl(parsed.guestWebBase || DEFAULT_CONFIG.guestWebBase),
-    deviceName: sanitizeText(parsed.deviceName || DEFAULT_CONFIG.deviceName, 80) || DEFAULT_CONFIG.deviceName
+    guestWebBase: sanitizeWebUrl(parsed.guestWebBase || DEFAULT_CONFIG.guestWebBase)
   };
 }
 
@@ -119,8 +119,7 @@ function saveConfig(input) {
     supabaseAnonKey: sanitizeText(input?.supabaseAnonKey || DEFAULT_CONFIG.supabaseAnonKey, 4096),
     partyCode: normalizePartyCode(input?.partyCode || ''),
     djKey: sanitizeText(input?.djKey || '', 80),
-    guestWebBase: sanitizeWebUrl(input?.guestWebBase || DEFAULT_CONFIG.guestWebBase),
-    deviceName: sanitizeText(input?.deviceName || DEFAULT_CONFIG.deviceName, 80) || DEFAULT_CONFIG.deviceName
+    guestWebBase: sanitizeWebUrl(input?.guestWebBase || DEFAULT_CONFIG.guestWebBase)
   };
 
   const filePath = configPath();
@@ -370,7 +369,7 @@ async function connectDj(configInput) {
       const { data, error } = await supabase.rpc('claim_dj', {
         p_code: partyCode,
         p_dj_key: config.djKey,
-        p_device_name: config.deviceName
+        p_device_name: DEFAULT_CONFIG.deviceName
       });
 
       if (error) {
@@ -405,7 +404,7 @@ async function connectDj(configInput) {
         `${apiBase}/api/parties/${partyCode}/claim-dj`,
         {
           djKey: config.djKey,
-          deviceName: config.deviceName
+          deviceName: DEFAULT_CONFIG.deviceName
         },
         {
           timeout: 9000
