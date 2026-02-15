@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -75,6 +75,32 @@ function log(level, message) {
     message,
     at: new Date().toISOString()
   });
+}
+
+async function savePngFile(payload) {
+  const dataUrl = String(payload?.dataUrl || '').trim();
+  if (!dataUrl.startsWith('data:image/png;base64,')) {
+    throw new Error('Invalid PNG data');
+  }
+
+  const suggestedNameRaw = sanitizeText(payload?.suggestedName || 'PulseDeck-QR', 120);
+  const suggestedName = suggestedNameRaw.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'PulseDeck-QR';
+  const defaultPath = path.join(app.getPath('downloads'), `${suggestedName}.png`);
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save QR PNG',
+    defaultPath,
+    filters: [{ name: 'PNG Image', extensions: ['png'] }]
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { ok: false, canceled: true };
+  }
+
+  const base64 = dataUrl.slice('data:image/png;base64,'.length);
+  const buffer = Buffer.from(base64, 'base64');
+  fs.writeFileSync(result.filePath, buffer);
+  return { ok: true, filePath: result.filePath };
 }
 
 function setStatus(status, detail = '') {
@@ -205,7 +231,7 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
   }
 
   const statusRaw = String(request?.status || 'queued').trim().toLowerCase();
-  const status = statusRaw === 'played' ? 'played' : 'queued';
+  const status = statusRaw === 'played' ? 'played' : statusRaw === 'rejected' ? 'rejected' : 'queued';
 
   let playedAt = null;
   if (request?.playedAt) {
@@ -542,10 +568,10 @@ async function updateRequestStatus(requestIdInput, nextStatus) {
     throw new Error('Request ID is missing.');
   }
 
-  const status = nextStatus === 'played' ? 'played' : 'queued';
+  const status = nextStatus === 'played' ? 'played' : nextStatus === 'rejected' ? 'rejected' : 'queued';
 
   if (liveConnection.mode === 'supabase') {
-    const fn = status === 'played' ? 'dj_mark_played' : 'dj_mark_queued';
+    const fn = status === 'played' ? 'dj_mark_played' : status === 'rejected' ? 'dj_mark_rejected' : 'dj_mark_queued';
     const { error } = await liveConnection.supabase.rpc(fn, {
       p_code: liveConnection.partyCode,
       p_request_id: requestId,
@@ -556,6 +582,10 @@ async function updateRequestStatus(requestIdInput, nextStatus) {
 
     await syncQueue(liveConnection);
     return { ok: true };
+  }
+
+  if (status === 'rejected') {
+    throw new Error('Reject is not supported in legacy API mode. Use Supabase mode.');
   }
 
   const response = await axios.post(
@@ -600,6 +630,8 @@ app.whenReady().then(() => {
   ipcMain.handle('dj:disconnect', async () => disconnectDj('Disconnected by user'));
   ipcMain.handle('dj:mark-played', async (_event, payload) => updateRequestStatus(payload?.requestId, 'played'));
   ipcMain.handle('dj:mark-queued', async (_event, payload) => updateRequestStatus(payload?.requestId, 'queued'));
+  ipcMain.handle('dj:mark-rejected', async (_event, payload) => updateRequestStatus(payload?.requestId, 'rejected'));
+  ipcMain.handle('file:save-png', async (_event, payload) => savePngFile(payload));
 
   createWindow();
 

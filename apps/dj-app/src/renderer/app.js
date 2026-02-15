@@ -61,12 +61,16 @@ const qrCloseBtn = document.getElementById('qrCloseBtn');
 const qrPartyCode = document.getElementById('qrPartyCode');
 const qrImage = document.getElementById('qrImage');
 const qrUrl = document.getElementById('qrUrl');
+const qrDownloadBtn = document.getElementById('qrDownloadBtn');
+const qrPresetIphoneBtn = document.getElementById('qrPresetIphoneBtn');
+const qrPresetIpadBtn = document.getElementById('qrPresetIpadBtn');
 
 let unsubscribe = null;
 let queueItems = [];
 let activeWindow = 'booth';
 let lastSharePayload = null;
 let queueOrder = 'oldest';
+let qrExportPreset = 'iphone';
 
 const QUEUE_ORDER_KEY = 'pulse_dj_queue_order';
 
@@ -194,7 +198,7 @@ function sanitizeQueueEntry(entry) {
 
   const seqNo = Number.isFinite(Number(entry?.seqNo)) ? Number(entry.seqNo) : 0;
   const statusRaw = String(entry?.status || 'queued').trim().toLowerCase();
-  const status = statusRaw === 'played' ? 'played' : 'queued';
+  const status = statusRaw === 'played' ? 'played' : statusRaw === 'rejected' ? 'rejected' : 'queued';
 
   return {
     id,
@@ -226,7 +230,7 @@ function sortQueue(items) {
 }
 
 function updateQueueCounters() {
-  const queued = queueItems.filter((entry) => entry.status !== 'played').length;
+  const queued = queueItems.filter((entry) => entry.status === 'queued').length;
   const played = queueItems.filter((entry) => entry.status === 'played').length;
 
   requestCount.textContent = String(queued);
@@ -320,6 +324,17 @@ async function markRequestQueued(requestId, button) {
   }
 }
 
+async function markRequestRejected(requestId, button) {
+  setButtonBusy(button, true, 'Removing...', 'X');
+  try {
+    await window.djApi.markRejected({ requestId });
+  } catch (error) {
+    appendLog('error', error.message || 'Failed to reject request.', new Date().toISOString());
+  } finally {
+    setButtonBusy(button, false, 'Removing...', 'X');
+  }
+}
+
 function renderRequestList() {
   requestsList.textContent = '';
   updateQueueCounters();
@@ -327,7 +342,7 @@ function renderRequestList() {
   const filterTerm = String(queueFilterInput?.value || '')
     .trim()
     .toLowerCase();
-  const queuedItems = queueItems.filter((entry) => entry.status !== 'played');
+  const queuedItems = queueItems;
   const visibleItems = filterTerm
     ? queuedItems.filter((entry) => {
         const hay = `${entry.title} ${entry.artist} ${entry.service}`.toLowerCase();
@@ -360,7 +375,7 @@ function renderRequestList() {
 
   for (const entry of visibleItems) {
     const item = document.createElement('article');
-    item.className = 'request-item';
+    item.className = `request-item request-${entry.status}`;
 
     const top = document.createElement('div');
     top.className = 'request-top';
@@ -393,8 +408,19 @@ function renderRequestList() {
     const playedButton = document.createElement('button');
     playedButton.type = 'button';
     playedButton.className = 'btn btn-success btn-mini';
-    playedButton.textContent = 'Mark Played';
+    playedButton.textContent = entry.status === 'played' ? 'Played' : 'Played';
     playedButton.addEventListener('click', () => markRequestPlayed(entry.id, playedButton));
+
+    const rejectButton = document.createElement('button');
+    rejectButton.type = 'button';
+    rejectButton.className = 'btn btn-danger btn-mini';
+    rejectButton.textContent = 'X';
+    rejectButton.addEventListener('click', () => markRequestRejected(entry.id, rejectButton));
+
+    if (entry.status === 'played' || entry.status === 'rejected') {
+      playedButton.disabled = true;
+      rejectButton.disabled = true;
+    }
 
     if (entry.songUrl) {
       const open = document.createElement('a');
@@ -403,14 +429,14 @@ function renderRequestList() {
       open.target = '_blank';
       open.rel = 'noreferrer noopener';
       open.textContent = 'Open Link';
-      actions.append(playedButton, open);
+      actions.append(playedButton, rejectButton, open);
     } else {
       const copy = document.createElement('button');
       copy.type = 'button';
       copy.className = 'btn btn-ghost btn-mini';
       copy.textContent = 'Copy';
       copy.addEventListener('click', () => copySongSummary(entry));
-      actions.append(playedButton, copy);
+      actions.append(playedButton, rejectButton, copy);
     }
 
     item.append(top, title, artist, meta, actions);
@@ -428,7 +454,7 @@ function renderPlayedList() {
     .toLowerCase();
 
   const playedItems = queueItems
-    .filter((entry) => entry.status === 'played')
+    .filter((entry) => entry.status === 'played' || entry.status === 'rejected')
     .slice()
     .sort((a, b) => {
       const aTime = new Date(a.playedAt || a.createdAt).getTime();
@@ -446,7 +472,7 @@ function renderPlayedList() {
   if (!playedItems.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
-    empty.textContent = 'No played requests yet.';
+    empty.textContent = 'No played or removed requests yet.';
     playedList.appendChild(empty);
     return;
   }
@@ -468,7 +494,7 @@ function renderPlayedList() {
 
   for (const entry of visibleItems) {
     const item = document.createElement('article');
-    item.className = 'request-item is-played';
+    item.className = `request-item request-${entry.status}`;
 
     const top = document.createElement('div');
     top.className = 'request-top';
@@ -580,7 +606,7 @@ function renderStagePreview(entries) {
 function renderStage() {
   if (!stageTitle || !stageArtist || !stageService || !stageSeq) return;
 
-  const queued = queueItems.filter((entry) => entry.status !== 'played');
+  const queued = queueItems.filter((entry) => entry.status === 'queued');
 
   const current = queued[0] || null;
   if (!current) {
@@ -647,6 +673,123 @@ function setQrVisible(visible) {
     qrModal.classList.add('hidden');
     qrModal.setAttribute('aria-hidden', 'true');
   }
+}
+
+function setQrPreset(preset) {
+  qrExportPreset = preset === 'ipad' ? 'ipad' : 'iphone';
+  if (qrPresetIphoneBtn) qrPresetIphoneBtn.classList.toggle('is-active', qrExportPreset === 'iphone');
+  if (qrPresetIpadBtn) qrPresetIpadBtn.classList.toggle('is-active', qrExportPreset === 'ipad');
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not load QR image'));
+    img.src = String(dataUrl || '');
+  });
+}
+
+function drawRoundRect(ctx, x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function presetSpec(preset) {
+  if (preset === 'ipad') return { key: 'ipad', w: 2048, h: 2732, label: 'iPad' };
+  return { key: 'iphone', w: 1170, h: 2532, label: 'iPhone' };
+}
+
+async function buildQrPosterPng(payload, preset) {
+  const spec = presetSpec(preset);
+  const partyCode = String(payload?.partyCode || '').trim() || '------';
+  const guestUrl = String(payload?.url || '').trim();
+  const qrDataUrl = String(payload?.qrDataUrl || '').trim();
+  if (!qrDataUrl) throw new Error('QR not generated yet.');
+
+  const canvas = document.createElement('canvas');
+  canvas.width = spec.w;
+  canvas.height = spec.h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas unavailable');
+
+  const bg = ctx.createLinearGradient(0, 0, spec.w, spec.h);
+  bg.addColorStop(0, '#070A12');
+  bg.addColorStop(0.6, '#121B34');
+  bg.addColorStop(1, '#15102A');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, spec.w, spec.h);
+
+  // Soft glow blobs.
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = 'rgba(0, 187, 248, 0.22)';
+  ctx.beginPath();
+  ctx.ellipse(spec.w * 0.22, spec.h * 0.22, spec.w * 0.34, spec.w * 0.34, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 95, 64, 0.18)';
+  ctx.beginPath();
+  ctx.ellipse(spec.w * 0.78, spec.h * 0.18, spec.w * 0.42, spec.w * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(143, 70, 255, 0.16)';
+  ctx.beginPath();
+  ctx.ellipse(spec.w * 0.7, spec.h * 0.88, spec.w * 0.56, spec.w * 0.56, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Frosted card.
+  const pad = Math.round(spec.w * 0.08);
+  const cardX = pad;
+  const cardW = spec.w - pad * 2;
+  const cardY = Math.round(spec.h * 0.10);
+  const cardH = Math.round(spec.h * 0.80);
+  drawRoundRect(ctx, cardX, cardY, cardW, cardH, 52);
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.stroke();
+
+  const textX = cardX + Math.round(cardW * 0.08);
+  let y = cardY + Math.round(cardH * 0.11);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.84)';
+  ctx.font = '700 42px "Space Grotesk", system-ui, -apple-system';
+  ctx.fillText('PulseDeck', textX, y);
+
+  y += 72;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 92px "Bebas Neue", Impact, system-ui';
+  ctx.fillText(partyCode, textX, y);
+
+  y += 44;
+  ctx.fillStyle = 'rgba(255,255,255,0.78)';
+  ctx.font = '600 34px "Space Grotesk", system-ui, -apple-system';
+  ctx.fillText('Scan to request a song', textX, y);
+
+  const qrImg = await loadImageFromDataUrl(qrDataUrl);
+  const qrSize = Math.round(Math.min(cardW * 0.72, spec.w * 0.76));
+  const qrX = Math.round(cardX + (cardW - qrSize) / 2);
+  const qrY = Math.round(cardY + cardH * 0.30);
+  drawRoundRect(ctx, qrX - 18, qrY - 18, qrSize + 36, qrSize + 36, 36);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+
+  if (guestUrl) {
+    const maxChars = spec.w >= 2000 ? 58 : 42;
+    const urlDisplay = guestUrl.length > maxChars ? `${guestUrl.slice(0, maxChars - 1)}…` : guestUrl;
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.font = '500 26px "Space Grotesk", system-ui, -apple-system';
+    ctx.fillText(urlDisplay, textX, cardY + cardH - 64);
+  }
+
+  return canvas.toDataURL('image/png');
 }
 
 async function copyToClipboard(text) {
@@ -928,6 +1071,35 @@ shareFullscreenBtn.addEventListener('click', async () => {
   applySharePayloadToModal(payload);
   setQrVisible(true);
 });
+
+if (qrPresetIphoneBtn) {
+  qrPresetIphoneBtn.addEventListener('click', () => setQrPreset('iphone'));
+}
+
+if (qrPresetIpadBtn) {
+  qrPresetIpadBtn.addEventListener('click', () => setQrPreset('ipad'));
+}
+
+if (qrDownloadBtn) {
+  qrDownloadBtn.addEventListener('click', async () => {
+    const payload = lastSharePayload || (await refreshShare({ openModal: true }));
+    if (!payload) return;
+
+    try {
+      setButtonBusy(qrDownloadBtn, true, 'Building...', 'Download PNG');
+      const dataUrl = await buildQrPosterPng(payload, qrExportPreset);
+      const suggestedName = `PulseDeck-${payload.partyCode}-${qrExportPreset}`;
+      const result = await window.djApi.savePng({ dataUrl, suggestedName });
+      if (!result?.canceled) {
+        appendLog('success', `QR poster saved (${qrExportPreset}).`, new Date().toISOString());
+      }
+    } catch (error) {
+      appendLog('error', error.message || 'Could not export PNG.', new Date().toISOString());
+    } finally {
+      setButtonBusy(qrDownloadBtn, false, 'Building...', 'Download PNG');
+    }
+  });
+}
 
 qrCloseBtn.addEventListener('click', () => {
   setQrVisible(false);

@@ -1,6 +1,6 @@
 {
   "name": "dj-app",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "PulseDeck macOS DJ desktop app",
   "author": "PulseDeck",
   "private": true,

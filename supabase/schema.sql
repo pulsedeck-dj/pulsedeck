@@ -84,7 +84,7 @@ alter table public.song_requests
 
 alter table public.song_requests
   add constraint song_requests_status_chk
-  check (status in ('queued', 'played'));
+  check (status in ('queued', 'played', 'rejected'));
 
 alter table public.song_requests
   add constraint song_requests_song_url_chk
@@ -616,6 +616,54 @@ begin
      set status = 'queued',
          played_at = null,
          played_by = null
+   where id = p_request_id and party_id = party_row.id;
+
+  ok := true;
+  return next;
+end;
+$$;
+
+create or replace function public.dj_mark_rejected(p_code text, p_request_id uuid, p_session_id uuid, p_dj_token text)
+returns table(ok boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  code_norm text := public.normalize_party_code(p_code);
+  token_clean text := trim(coalesce(p_dj_token,''));
+  party_row public.parties%rowtype;
+  session_row public.dj_sessions%rowtype;
+  device text;
+begin
+  if code_norm !~ '^[A-Z0-9]{6}$' then
+    raise exception 'Invalid party code';
+  end if;
+  if p_request_id is null then
+    raise exception 'Invalid request ID';
+  end if;
+  if p_session_id is null or token_clean = '' then
+    raise exception 'Missing DJ credentials';
+  end if;
+
+  select * into party_row from public.parties where code = code_norm;
+  if not found then
+    raise exception 'Party not found';
+  end if;
+
+  select * into session_row from public.dj_sessions where id = p_session_id and party_id = party_row.id and active = true;
+  if not found then
+    raise exception 'Invalid DJ session';
+  end if;
+  if session_row.token_hash <> public.sha256_hex(token_clean) then
+    raise exception 'Invalid DJ token';
+  end if;
+
+  device := session_row.device_name;
+  update public.song_requests
+     set status = 'rejected',
+         played_at = now(),
+         played_by = device
    where id = p_request_id and party_id = party_row.id;
 
   ok := true;

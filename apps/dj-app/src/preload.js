@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('djApi', {
   disconnect: () => ipcRenderer.invoke('dj:disconnect'),
   markPlayed: (payload) => ipcRenderer.invoke('dj:mark-played', payload),
   markQueued: (payload) => ipcRenderer.invoke('dj:mark-queued', payload),
+  markRejected: (payload) => ipcRenderer.invoke('dj:mark-rejected', payload),
+  savePng: (payload) => ipcRenderer.invoke('file:save-png', payload),
   onEvent: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('dj:event', listener);
