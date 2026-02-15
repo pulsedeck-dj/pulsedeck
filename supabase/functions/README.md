@@ -11,7 +11,7 @@ Used by the guest website for Spotify + SoundCloud typeahead search.
 3. Deploy the function:
 
 ```bash
-supabase functions deploy music-search
+supabase functions deploy music-search --no-verify-jwt
 ```
 
 ### Set Secrets
@@ -23,4 +23,3 @@ In Supabase Dashboard -> Project Settings -> Edge Functions -> Secrets, add:
 - `SOUNDCLOUD_CLIENT_ID`
 
 Without these, Spotify/SoundCloud typeahead will show a message telling guests to paste a link instead.
-
