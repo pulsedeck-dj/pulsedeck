@@ -50,22 +50,6 @@
           </div>
 
           <form id="requestForm" class="form-grid">
-            <p class="mini-label">Choose service</p>
-            <div class="service-row" role="radiogroup" aria-label="Music service">
-              <label class="service-pill">
-                <input type="radio" name="service" value="Apple Music" checked />
-                <span>Apple Music</span>
-              </label>
-              <label class="service-pill">
-                <input type="radio" name="service" value="Spotify" />
-                <span>Spotify</span>
-              </label>
-              <label class="service-pill">
-                <input type="radio" name="service" value="SoundCloud" />
-                <span>SoundCloud</span>
-              </label>
-            </div>
-
             <div id="appleSearchSection" class="apple-search">
               <label for="appleSearchTerm">Search Music</label>
               <div class="search-row">
@@ -88,21 +72,7 @@
             <input id="title" type="hidden" maxlength="120" required />
             <input id="artist" type="hidden" maxlength="120" required />
 
-            <details class="advanced-link-block">
-              <summary>Advanced: Paste Song Link (Optional)</summary>
-              <label for="songUrl" class="advanced-label">Song URL</label>
-              <input id="songUrl" maxlength="500" placeholder="https://music.apple.com/..." />
-              <div class="link-tools">
-                <button id="songUrlAutofillBtn" class="btn btn-ghost btn-mini" type="button">
-                  Autofill From Link
-                </button>
-              </div>
-              <p id="songUrlAutofillStatus" class="status status-neutral" aria-live="polite">
-                Paste a link and tap Autofill to pull title + artist.
-              </p>
-            </details>
-
-            <button type="submit" class="btn btn-primary">Submit Request</button>
+            <button type="submit" class="btn btn-primary btn-full">Submit Request</button>
           </form>
 
           <p id="requestResult" class="status status-neutral" aria-live="polite">No request submitted yet.</p>

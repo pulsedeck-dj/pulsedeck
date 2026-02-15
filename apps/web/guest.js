@@ -57,7 +57,7 @@ function readSupabaseConfig() {
 }
 
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
-const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'SoundCloud']);
+const ALLOWED_SERVICES = new Set(['Apple Music']);
 
 const joinForm = document.getElementById('joinForm');
 const partyCodeInput = document.getElementById('partyCode');
@@ -74,10 +74,8 @@ const appleSearchBtn = document.getElementById('appleSearchBtn');
 const appleSearchStatus = document.getElementById('appleSearchStatus');
 const appleSearchResults = document.getElementById('appleSearchResults');
 
-const songUrlInput = document.getElementById('songUrl');
-const songUrlSummary = document.querySelector('.advanced-link-block summary');
-const songUrlAutofillBtn = document.getElementById('songUrlAutofillBtn');
-const songUrlAutofillStatus = document.getElementById('songUrlAutofillStatus');
+// Search-only guest flow: no link paste / manual entry UI.
+const songUrlInput = null;
 
 const pickedSongPanel = document.getElementById('pickedSongPanel');
 const pickedSongTitle = document.getElementById('pickedSongTitle');
@@ -112,11 +110,6 @@ function setStatus(element, text, type = 'neutral') {
   element.classList.remove('status-neutral', 'status-info', 'status-success', 'status-error');
   element.classList.add(`status-${type}`);
   element.textContent = text;
-}
-
-function setSongUrlAutofillStatus(text, type = 'neutral') {
-  if (!songUrlAutofillStatus) return;
-  setStatus(songUrlAutofillStatus, text, type);
 }
 
 function setButtonLoading(button, loading, loadingLabel, idleLabel) {
@@ -249,75 +242,9 @@ async function itunesSongSearch(term, limit = 8) {
     .filter(Boolean);
 }
 
-async function supaFunctionSearch(service, term, limit = 10) {
-  if (!supabaseClient) throw new Error('Supabase not initialized');
-  const svc = String(service || '').trim();
-  const q = String(term || '').trim();
-  const lim = Math.max(1, Math.min(12, Number(limit) || 10));
-
-  const { data, error } = await supabaseClient.functions.invoke('music-search', {
-    body: { service: svc, term: q, limit: lim }
-  });
-
-  if (error) {
-    throw new Error(error.message || 'Search failed');
-  }
-
-  const items = Array.isArray(data?.results) ? data.results : [];
-  return items
-    .map((row) => {
-      const title = String(row?.title || '').trim();
-      const artist = String(row?.artist || '').trim();
-      if (!title || !artist) return null;
-      return {
-        title,
-        artist,
-        album: String(row?.album || '').trim(),
-        url: String(row?.url || '').trim(),
-        artworkUrl: String(row?.artworkUrl || '').trim()
-      };
-    })
-    .filter(Boolean);
-}
-
 async function searchMusic(service, term) {
-  const svc = String(service || '').trim();
-  if (svc === 'Apple Music') return await itunesSongSearch(term, 10);
-
-  // Spotify/SoundCloud require a token, so we call a Supabase Edge Function.
-  if (!supabaseClient) return [];
-  return await supaFunctionSearch(svc, term, 10);
-}
-
-async function oembedAutofill(service, songUrl) {
-  const url = String(songUrl || '').trim();
-  if (!url) throw new Error('Missing URL');
-
-  let endpoint = '';
-  if (service === 'Apple Music') {
-    endpoint = `https://music.apple.com/oembed?url=${encodeURIComponent(url)}`;
-  } else if (service === 'Spotify') {
-    endpoint = `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`;
-  } else if (service === 'SoundCloud') {
-    endpoint = `https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(url)}`;
-  } else {
-    throw new Error('Unsupported service');
-  }
-
-  const data = await fetchJson(endpoint, { timeoutMs: 9000 });
-  const titleRaw = String(data?.title || '').trim();
-  const author = String(data?.author_name || '').trim();
-
-  // oEmbed title is usually "Song Title" and author is artist/channel.
-  // Some providers include "Title by Artist" in title; keep it simple.
-  const title = titleRaw || '';
-  const artist = author || '';
-
-  return {
-    title,
-    artist,
-    canonicalUrl: url
-  };
+  if (String(service || '').trim() !== 'Apple Music') return [];
+  return await itunesSongSearch(term, 10);
 }
 
 async function apiRequest(path, options = {}) {
@@ -423,8 +350,7 @@ function makeIdempotencyKey() {
 }
 
 function readSelectedService() {
-  const selected = requestForm?.querySelector('input[name="service"]:checked');
-  return selected ? selected.value : '';
+  return 'Apple Music';
 }
 
 function hostnameMatches(hostnameInput, allowedHostInput) {
@@ -436,7 +362,7 @@ function hostnameMatches(hostnameInput, allowedHostInput) {
 }
 
 function isValidSongUrl(urlText, service) {
-  if (!urlText) return true;
+  if (!urlText) return false;
 
   let parsed;
   try {
@@ -452,14 +378,6 @@ function isValidSongUrl(urlText, service) {
     return hostnameMatches(hostname, 'music.apple.com');
   }
 
-  if (service === 'Spotify') {
-    return hostnameMatches(hostname, 'spotify.com') || hostnameMatches(hostname, 'spotify.link');
-  }
-
-  if (service === 'SoundCloud') {
-    return hostnameMatches(hostname, 'soundcloud.com') || hostnameMatches(hostname, 'on.soundcloud.com');
-  }
-
   return false;
 }
 
@@ -470,36 +388,12 @@ function serviceIsAppleMusic() {
 function toggleAppleSearchVisibility() {
   if (!appleSearchSection) return;
 
-  // Search is always available (Apple via iTunes; others may require link paste for now).
+  // Search is always available (Apple Music only).
   appleSearchSection.classList.remove('hidden');
 }
 
 function updateSongUrlUi() {
-  if (!songUrlInput) return;
-  const service = readSelectedService();
-
-  if (service === 'Apple Music') {
-    songUrlInput.placeholder = 'https://music.apple.com/...';
-    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Apple Music Link (Optional)';
-    setSongUrlAutofillStatus('Paste an Apple Music link and tap Autofill, or use Search to pick a song.', 'neutral');
-  } else if (service === 'Spotify') {
-    songUrlInput.placeholder = 'https://open.spotify.com/track/...';
-    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Spotify Link (Optional)';
-    setSongUrlAutofillStatus('Paste a Spotify track link and tap Autofill to pull title + artist.', 'neutral');
-  } else if (service === 'SoundCloud') {
-    songUrlInput.placeholder = 'https://soundcloud.com/...';
-    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste SoundCloud Link (Optional)';
-    setSongUrlAutofillStatus('Paste a SoundCloud track link and tap Autofill to pull title + artist.', 'neutral');
-  } else {
-    songUrlInput.placeholder = 'https://...';
-    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Song Link (Optional)';
-    setSongUrlAutofillStatus('Paste a link and tap Autofill to pull song details.', 'neutral');
-  }
-
-  const current = String(songUrlInput.value || '').trim();
-  if (current && !isValidSongUrl(current, service)) {
-    songUrlInput.value = '';
-  }
+  // No-op (no manual link flow).
 }
 
 function stopJoinPolling(message) {
@@ -631,7 +525,6 @@ function fillRequestFieldsFromSearchResult(result) {
   const artistInput = document.getElementById('artist');
   if (titleInput) titleInput.value = result.title || '';
   if (artistInput) artistInput.value = result.artist || '';
-  if (songUrlInput) songUrlInput.value = result.url || '';
   pickedSong = {
     service: readSelectedService(),
     title: String(result.title || '').trim(),
@@ -792,7 +685,6 @@ async function submitSongRequest(input, options = {}) {
     const artistInput = document.getElementById('artist');
     if (titleInput) titleInput.value = '';
     if (artistInput) artistInput.value = '';
-    if (songUrlInput) songUrlInput.value = '';
     if (appleSearchTermInput) appleSearchTermInput.value = '';
     if (appleSearchResults) appleSearchResults.textContent = '';
     toggleAppleSearchVisibility();
@@ -860,14 +752,7 @@ requestForm.addEventListener('submit', async (event) => {
     service: pickedSong.service,
     title: pickedSong.title,
     artist: pickedSong.artist,
-    songUrl: pickedSong.songUrl || String(songUrlInput?.value || '')
-  });
-});
-
-requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
-  input.addEventListener('change', () => {
-    toggleAppleSearchVisibility();
-    updateSongUrlUi();
+    songUrl: pickedSong.songUrl
   });
 });
 
@@ -902,45 +787,6 @@ appleSearchTermInput.addEventListener('input', () => {
   }, 250);
 });
 
-songUrlAutofillBtn.addEventListener('click', async () => {
-  const service = readSelectedService();
-  const url = String(songUrlInput?.value || '').trim();
-
-  if (!url) {
-    setSongUrlAutofillStatus('Paste a song link first.', 'error');
-    return;
-  }
-
-  if (!isValidSongUrl(url, service)) {
-    setSongUrlAutofillStatus('That link does not match the selected service.', 'error');
-    return;
-  }
-
-  setButtonLoading(songUrlAutofillBtn, true, 'Autofilling...', 'Autofill From Link');
-  setSongUrlAutofillStatus('Looking up song details...', 'info');
-
-  try {
-    const data = await oembedAutofill(service, url);
-    const title = String(data?.title || '').trim();
-    const artist = String(data?.artist || '').trim();
-    const canonical = String(data?.canonicalUrl || '').trim();
-
-    if (title) document.getElementById('title').value = title;
-    if (artist) document.getElementById('artist').value = artist;
-    if (canonical && songUrlInput) songUrlInput.value = canonical;
-
-    if (title && artist) {
-      setSongUrlAutofillStatus(`Autofilled: ${title} - ${artist}`, 'success');
-    } else {
-      setSongUrlAutofillStatus('Autofill completed, but some fields are missing. Please review.', 'info');
-    }
-  } catch (error) {
-    setSongUrlAutofillStatus(error.message || 'Could not autofill from link.', 'error');
-  } finally {
-    setButtonLoading(songUrlAutofillBtn, false, 'Autofilling...', 'Autofill From Link');
-  }
-});
-
 toggleAppleSearchVisibility();
 updateSongUrlUi();
 
@@ -964,7 +810,7 @@ if (pickedSubmitBtn) {
       service: pickedSong.service,
       title: pickedSong.title,
       artist: pickedSong.artist,
-      songUrl: pickedSong.songUrl || String(songUrlInput?.value || '')
+      songUrl: pickedSong.songUrl
     });
   });
 }
