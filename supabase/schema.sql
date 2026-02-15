@@ -441,7 +441,7 @@ begin
   if idem <> '' then
     select * into existing_key from public.idempotency_keys where party_id = party_row.id and key = idem;
     if found then
-      select * into request_row from public.song_requests where id = existing_key.request_id;
+      select * into request_row from public.song_requests r where r.id = existing_key.request_id;
       id := request_row.id;
       seq_no := request_row.seq_no;
       title := request_row.title;

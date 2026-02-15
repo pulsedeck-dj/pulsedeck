@@ -79,6 +79,14 @@ const songUrlSummary = document.querySelector('.advanced-link-block summary');
 const songUrlAutofillBtn = document.getElementById('songUrlAutofillBtn');
 const songUrlAutofillStatus = document.getElementById('songUrlAutofillStatus');
 
+const pickedSongPanel = document.getElementById('pickedSongPanel');
+const pickedSongTitle = document.getElementById('pickedSongTitle');
+const pickedSongArtist = document.getElementById('pickedSongArtist');
+const pickedChangeBtn = document.getElementById('pickedChangeBtn');
+const pickedSubmitBtn = document.getElementById('pickedSubmitBtn');
+
+let pickedSong = null;
+
 let apiBase = readInitialApiBase();
 let activePartyCode = null;
 let supabaseClient = null;
@@ -143,8 +151,13 @@ async function fetchJson(url, { timeoutMs = 9000 } = {}) {
   const { signal, clear } = makeAbortSignal(timeoutMs);
   try {
     const res = await fetch(url, { method: 'GET', signal });
-    const contentType = res.headers.get('content-type') || '';
-    const data = contentType.includes('application/json') ? await res.json() : null;
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
     if (!res.ok) {
       const message = data?.error || data?.message || `Request failed (${res.status})`;
       throw new Error(message);
@@ -373,13 +386,8 @@ function serviceIsAppleMusic() {
 function toggleAppleSearchVisibility() {
   if (!appleSearchSection) return;
 
-  if (serviceIsAppleMusic()) {
-    appleSearchSection.classList.remove('hidden');
-  } else {
-    appleSearchSection.classList.add('hidden');
-    if (appleSearchResults) appleSearchResults.textContent = '';
-    setStatus(appleSearchStatus, 'Apple Music search is available only for Apple Music requests.', 'info');
-  }
+  // Search is always available (Apple via iTunes; others may require link paste for now).
+  appleSearchSection.classList.remove('hidden');
 }
 
 function updateSongUrlUi() {
@@ -540,7 +548,17 @@ function fillRequestFieldsFromSearchResult(result) {
   if (titleInput) titleInput.value = result.title || '';
   if (artistInput) artistInput.value = result.artist || '';
   if (songUrlInput) songUrlInput.value = result.url || '';
-  setStatus(appleSearchStatus, `Selected ${result.title} - ${result.artist}`, 'success');
+  pickedSong = {
+    service: readSelectedService(),
+    title: String(result.title || '').trim(),
+    artist: String(result.artist || '').trim(),
+    songUrl: String(result.url || '').trim()
+  };
+
+  if (pickedSongTitle) pickedSongTitle.textContent = pickedSong.title || 'Selected song';
+  if (pickedSongArtist) pickedSongArtist.textContent = pickedSong.artist ? `by ${pickedSong.artist}` : '';
+  if (pickedSongPanel) pickedSongPanel.classList.remove('hidden');
+  setStatus(appleSearchStatus, `Selected: ${pickedSong.title} - ${pickedSong.artist}`, 'success');
 }
 
 function renderAppleSearchResults(items) {
@@ -558,6 +576,16 @@ function renderAppleSearchResults(items) {
   for (const item of items) {
     const card = document.createElement('article');
     card.className = 'search-card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `Select ${item.title} by ${item.artist}`);
+    card.addEventListener('click', () => fillRequestFieldsFromSearchResult(item));
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        fillRequestFieldsFromSearchResult(item);
+      }
+    });
 
     const image = document.createElement('img');
     image.alt = `${item.title} artwork`;
@@ -576,43 +604,13 @@ function renderAppleSearchResults(items) {
 
     meta.append(title, sub);
 
-    const actions = document.createElement('div');
-    actions.className = 'search-actions';
-
-    const autofillButton = document.createElement('button');
-    autofillButton.type = 'button';
-    autofillButton.className = 'btn btn-ghost';
-    autofillButton.textContent = 'Autofill';
-    autofillButton.addEventListener('click', () => fillRequestFieldsFromSearchResult(item));
-
-    const requestButton = document.createElement('button');
-    requestButton.type = 'button';
-    requestButton.className = 'btn btn-primary';
-    requestButton.textContent = 'Request Song';
-    requestButton.addEventListener('click', async () => {
-      const ok = await submitSongRequest(
-        {
-          service: 'Apple Music',
-          title: item.title,
-          artist: item.artist,
-          songUrl: item.url
-        },
-        { loading: true }
-      );
-
-      if (ok) {
-        setStatus(appleSearchStatus, `Requested ${item.title} - ${item.artist}`, 'success');
-      }
-    });
-
-    actions.append(autofillButton, requestButton);
-    card.append(image, meta, actions);
+    card.append(image, meta);
     appleSearchResults.appendChild(card);
   }
 }
 
 async function runAppleMusicSearch() {
-  if (!serviceIsAppleMusic()) return;
+  const service = readSelectedService();
 
   const term = String(appleSearchTermInput?.value || '').trim();
   if (term.length < 2) {
@@ -621,16 +619,28 @@ async function runAppleMusicSearch() {
   }
 
   setButtonLoading(appleSearchBtn, true, 'Searching...', 'Search');
-  setStatus(appleSearchStatus, 'Searching Apple Music...', 'info');
+  setStatus(appleSearchStatus, `Searching ${service}...`, 'info');
 
   try {
-    const results = await itunesSongSearch(term, 8);
+    let results = [];
+    if (service === 'Apple Music') {
+      results = await itunesSongSearch(term, 10);
+    } else {
+      // Spotify/SoundCloud search needs a server-side proxy (tokens). Until added, guide users to paste a link.
+      results = [];
+    }
     renderAppleSearchResults(results);
 
     if (results.length) {
-      setStatus(appleSearchStatus, `Found ${results.length} results. Tap Autofill or Request.`, 'success');
+      setStatus(appleSearchStatus, `Found ${results.length} results. Tap a song to select it.`, 'success');
     } else {
-      setStatus(appleSearchStatus, 'No results. Try another search.', 'neutral');
+      setStatus(
+        appleSearchStatus,
+        service === 'Apple Music'
+          ? 'No results. Try another search.'
+          : `Search for ${service} needs a link right now. Paste a ${service} link in Advanced and tap Autofill.`,
+        'neutral'
+      );
     }
   } catch (error) {
     setStatus(appleSearchStatus, error.message || 'Apple Music search failed.', 'error');
@@ -697,6 +707,9 @@ async function submitSongRequest(input, options = {}) {
     const seqNo = data.seqNo ?? data.seq_no;
     setStatus(requestResult, `Queued #${seqNo}: ${data.title} - ${data.artist}`, 'success');
 
+    pickedSong = null;
+    if (pickedSongPanel) pickedSongPanel.classList.add('hidden');
+
     const titleInput = document.getElementById('title');
     const artistInput = document.getElementById('artist');
     if (titleInput) titleInput.value = '';
@@ -760,11 +773,16 @@ stopCheckingBtn.addEventListener('click', () => {
 requestForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
+  if (!pickedSong) {
+    setStatus(requestResult, 'Tap a song from the results first.', 'error');
+    return;
+  }
+
   await submitSongRequest({
-    service: readSelectedService(),
-    title: String(document.getElementById('title').value || ''),
-    artist: String(document.getElementById('artist').value || ''),
-    songUrl: String(songUrlInput?.value || '')
+    service: pickedSong.service,
+    title: pickedSong.title,
+    artist: pickedSong.artist,
+    songUrl: pickedSong.songUrl || String(songUrlInput?.value || '')
   });
 });
 
@@ -775,9 +793,9 @@ requestForm.querySelectorAll('input[name="service"]').forEach((input) => {
   });
 });
 
-appleSearchBtn.addEventListener('click', () => {
-  runAppleMusicSearch();
-});
+if (appleSearchBtn) {
+  appleSearchBtn.addEventListener('click', () => runAppleMusicSearch());
+}
 
 appleSearchTermInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
@@ -847,6 +865,31 @@ songUrlAutofillBtn.addEventListener('click', async () => {
 
 toggleAppleSearchVisibility();
 updateSongUrlUi();
+
+if (pickedChangeBtn) {
+  pickedChangeBtn.addEventListener('click', () => {
+    pickedSong = null;
+    if (pickedSongPanel) pickedSongPanel.classList.add('hidden');
+    setStatus(requestResult, 'Pick a song from the results.', 'neutral');
+    if (appleSearchTermInput) appleSearchTermInput.focus();
+  });
+}
+
+if (pickedSubmitBtn) {
+  pickedSubmitBtn.addEventListener('click', async () => {
+    if (!pickedSong) {
+      setStatus(requestResult, 'Tap a song from the results first.', 'error');
+      return;
+    }
+
+    await submitSongRequest({
+      service: pickedSong.service,
+      title: pickedSong.title,
+      artist: pickedSong.artist,
+      songUrl: pickedSong.songUrl || String(songUrlInput?.value || '')
+    });
+  });
+}
 
 initSupabase();
 

@@ -67,20 +67,26 @@
             </div>
 
             <div id="appleSearchSection" class="apple-search">
-              <label for="appleSearchTerm">Search Apple Music</label>
+              <label for="appleSearchTerm">Search Music</label>
               <div class="search-row">
-                <input id="appleSearchTerm" maxlength="120" placeholder="Search song or artist" />
-                <button id="appleSearchBtn" class="btn btn-secondary" type="button">Search</button>
+                <input id="appleSearchTerm" maxlength="120" placeholder="Type a song or artist" />
               </div>
               <p id="appleSearchStatus" class="status status-neutral">Search to autofill song info.</p>
               <div id="appleSearchResults" class="search-results"></div>
             </div>
 
-            <label for="title">Song Title</label>
-            <input id="title" maxlength="120" required />
+            <div id="pickedSongPanel" class="picked-song hidden" aria-live="polite">
+              <p class="mini-label">Selected song</p>
+              <p id="pickedSongTitle" class="picked-title">None</p>
+              <p id="pickedSongArtist" class="picked-artist"></p>
+              <div class="picked-actions">
+                <button id="pickedChangeBtn" class="btn btn-ghost" type="button">Change</button>
+                <button id="pickedSubmitBtn" class="btn btn-primary" type="button">Submit Request</button>
+              </div>
+            </div>
 
-            <label for="artist">Artist</label>
-            <input id="artist" maxlength="120" required />
+            <input id="title" type="hidden" maxlength="120" required />
+            <input id="artist" type="hidden" maxlength="120" required />
 
             <details class="advanced-link-block">
               <summary>Advanced: Paste Song Link (Optional)</summary>

@@ -632,8 +632,13 @@ async function fetchJson(url, { timeoutMs = 9000 } = {}) {
 
   try {
     const res = await fetch(url, { method: 'GET', signal: controller.signal });
-    const contentType = res.headers.get('content-type') || '';
-    const data = contentType.includes('application/json') ? await res.json() : null;
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
 
     if (!res.ok) {
       const message = data?.error || data?.message || `Request failed (${res.status})`;
