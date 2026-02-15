@@ -178,7 +178,9 @@ async function itunesSongSearch(term, limit = 8) {
   // Public Apple endpoint, no tokens needed.
   const url = new URL('https://itunes.apple.com/search');
   url.searchParams.set('term', q);
+  url.searchParams.set('media', 'music');
   url.searchParams.set('entity', 'song');
+  url.searchParams.set('country', 'US');
   url.searchParams.set('limit', String(Math.max(1, Math.min(12, Number(limit) || 8))));
 
   const data = await fetchJson(url.toString(), { timeoutMs: 9000 });
@@ -203,6 +205,46 @@ async function itunesSongSearch(term, limit = 8) {
       };
     })
     .filter(Boolean);
+}
+
+async function supaFunctionSearch(service, term, limit = 10) {
+  if (!supabaseClient) throw new Error('Supabase not initialized');
+  const svc = String(service || '').trim();
+  const q = String(term || '').trim();
+  const lim = Math.max(1, Math.min(12, Number(limit) || 10));
+
+  const { data, error } = await supabaseClient.functions.invoke('music-search', {
+    body: { service: svc, term: q, limit: lim }
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Search failed');
+  }
+
+  const items = Array.isArray(data?.results) ? data.results : [];
+  return items
+    .map((row) => {
+      const title = String(row?.title || '').trim();
+      const artist = String(row?.artist || '').trim();
+      if (!title || !artist) return null;
+      return {
+        title,
+        artist,
+        album: String(row?.album || '').trim(),
+        url: String(row?.url || '').trim(),
+        artworkUrl: String(row?.artworkUrl || '').trim()
+      };
+    })
+    .filter(Boolean);
+}
+
+async function searchMusic(service, term) {
+  const svc = String(service || '').trim();
+  if (svc === 'Apple Music') return await itunesSongSearch(term, 10);
+
+  // Spotify/SoundCloud require a token, so we call a Supabase Edge Function.
+  if (!supabaseClient) return [];
+  return await supaFunctionSearch(svc, term, 10);
 }
 
 async function oembedAutofill(service, songUrl) {
@@ -622,13 +664,7 @@ async function runAppleMusicSearch() {
   setStatus(appleSearchStatus, `Searching ${service}...`, 'info');
 
   try {
-    let results = [];
-    if (service === 'Apple Music') {
-      results = await itunesSongSearch(term, 10);
-    } else {
-      // Spotify/SoundCloud search needs a server-side proxy (tokens). Until added, guide users to paste a link.
-      results = [];
-    }
+    const results = await searchMusic(service, term);
     renderAppleSearchResults(results);
 
     if (results.length) {
@@ -638,7 +674,7 @@ async function runAppleMusicSearch() {
         appleSearchStatus,
         service === 'Apple Music'
           ? 'No results. Try another search.'
-          : `Search for ${service} needs a link right now. Paste a ${service} link in Advanced and tap Autofill.`,
+          : `No results yet. DJ must enable ${service} search (Edge Function). Or paste a ${service} link in Advanced.`,
         'neutral'
       );
     }

@@ -660,7 +660,9 @@ async function itunesSongSearch(term, limit = 8) {
 
   const url = new URL('https://itunes.apple.com/search');
   url.searchParams.set('term', q);
+  url.searchParams.set('media', 'music');
   url.searchParams.set('entity', 'song');
+  url.searchParams.set('country', 'US');
   url.searchParams.set('limit', String(Math.max(1, Math.min(12, Number(limit) || 8))));
 
   const data = await fetchJson(url.toString(), { timeoutMs: 9000 });
