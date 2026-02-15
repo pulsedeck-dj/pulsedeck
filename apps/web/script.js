@@ -58,7 +58,7 @@ function readSupabaseConfig() {
 
 const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const AUTH_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'YouTube']);
+const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'SoundCloud']);
 const AUTH_TOKEN_KEY = 'pulse_auth_token';
 const PASSWORD_MIN_LENGTH = 10;
 
@@ -462,8 +462,8 @@ function isValidSongUrl(urlText, service) {
     return hostnameMatches(hostname, 'spotify.com') || hostnameMatches(hostname, 'spotify.link');
   }
 
-  if (service === 'YouTube') {
-    return hostnameMatches(hostname, 'youtube.com') || hostnameMatches(hostname, 'youtu.be');
+  if (service === 'SoundCloud') {
+    return hostnameMatches(hostname, 'soundcloud.com') || hostnameMatches(hostname, 'on.soundcloud.com');
   }
 
   return false;
@@ -624,6 +624,80 @@ async function apiRequest(path, options = {}) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchJson(url, { timeoutMs = 9000 } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, { method: 'GET', signal: controller.signal });
+    const contentType = res.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await res.json() : null;
+
+    if (!res.ok) {
+      const message = data?.error || data?.message || `Request failed (${res.status})`;
+      throw new Error(message);
+    }
+
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('Request timed out. Please retry.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function itunesSongSearch(term, limit = 8) {
+  const q = String(term || '').trim();
+  if (q.length < 2) return [];
+
+  const url = new URL('https://itunes.apple.com/search');
+  url.searchParams.set('term', q);
+  url.searchParams.set('entity', 'song');
+  url.searchParams.set('limit', String(Math.max(1, Math.min(12, Number(limit) || 8))));
+
+  const data = await fetchJson(url.toString(), { timeoutMs: 9000 });
+  const rows = Array.isArray(data?.results) ? data.results : [];
+
+  return rows
+    .map((row) => {
+      const title = String(row?.trackName || '').trim();
+      const artist = String(row?.artistName || '').trim();
+      if (!title || !artist) return null;
+      return {
+        title,
+        artist,
+        album: String(row?.collectionName || '').trim(),
+        url: String(row?.trackViewUrl || '').trim(),
+        artworkUrl: String(row?.artworkUrl100 || '').trim()
+      };
+    })
+    .filter(Boolean);
+}
+
+async function oembedAutofill(service, songUrl) {
+  const url = String(songUrl || '').trim();
+  if (!url) throw new Error('Missing URL');
+
+  let endpoint = '';
+  if (service === 'Apple Music') {
+    endpoint = `https://music.apple.com/oembed?url=${encodeURIComponent(url)}`;
+  } else if (service === 'Spotify') {
+    endpoint = `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`;
+  } else if (service === 'SoundCloud') {
+    endpoint = `https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(url)}`;
+  } else {
+    throw new Error('Unsupported service');
+  }
+
+  const data = await fetchJson(endpoint, { timeoutMs: 9000 });
+  return {
+    title: String(data?.title || '').trim(),
+    artist: String(data?.author_name || '').trim(),
+    canonicalUrl: url
+  };
 }
 
 async function checkBackendHealth() {
@@ -819,10 +893,10 @@ function updateSongUrlUi() {
     songUrlInput.placeholder = 'https://open.spotify.com/track/...';
     if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Spotify Link (Optional)';
     setSongUrlAutofillStatus('Paste a Spotify track link and tap Autofill to pull title + artist.', 'neutral');
-  } else if (service === 'YouTube') {
-    songUrlInput.placeholder = 'https://youtu.be/...';
-    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste YouTube Link (Optional)';
-    setSongUrlAutofillStatus('Paste a YouTube link and tap Autofill to pull title + channel.', 'neutral');
+  } else if (service === 'SoundCloud') {
+    songUrlInput.placeholder = 'https://soundcloud.com/...';
+    if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste SoundCloud Link (Optional)';
+    setSongUrlAutofillStatus('Paste a SoundCloud track link and tap Autofill to pull title + artist.', 'neutral');
   } else {
     songUrlInput.placeholder = 'https://...';
     if (songUrlSummary) songUrlSummary.textContent = 'Advanced: Paste Song Link (Optional)';
@@ -1008,15 +1082,10 @@ async function runAppleMusicSearch() {
   }
 
   setButtonLoading(appleSearchBtn, true, 'Searching...', 'Search');
-  setStatus(appleSearchStatus, 'Searching Apple Music catalog...', 'info');
+  setStatus(appleSearchStatus, 'Searching Apple Music...', 'info');
 
   try {
-    const query = new URLSearchParams({ term, limit: '8' });
-    const data = await apiRequest(`/api/music/apple/search?${query.toString()}`, {
-      method: 'GET'
-    });
-
-    const results = Array.isArray(data.results) ? data.results : [];
+    const results = await itunesSongSearch(term, 8);
     renderAppleSearchResults(results);
   } catch (error) {
     setStatus(appleSearchStatus, error.message || 'Apple Music search failed.', 'error');
@@ -1441,12 +1510,10 @@ if (songUrlAutofillBtn) {
     setSongUrlAutofillStatus('Looking up song details...', 'info');
 
     try {
-      const query = new URLSearchParams({ service, url });
-      const data = await apiRequest(`/api/music/metadata?${query.toString()}`, { method: 'GET' });
-
+      const data = await oembedAutofill(service, url);
       const title = String(data?.title || '').trim();
       const artist = String(data?.artist || '').trim();
-      const canonical = String(data?.url || '').trim();
+      const canonical = String(data?.canonicalUrl || '').trim();
 
       if (title) document.getElementById('title').value = title;
       if (artist) document.getElementById('artist').value = artist;
@@ -1467,6 +1534,26 @@ if (songUrlAutofillBtn) {
 
 appleSearchBtn.addEventListener('click', () => {
   runAppleMusicSearch();
+});
+
+let appleTypeaheadTimer = null;
+let appleTypeaheadLast = '';
+
+appleSearchTermInput.addEventListener('input', () => {
+  if (!serviceIsAppleMusic()) return;
+  const term = String(appleSearchTermInput.value || '').trim();
+  if (term === appleTypeaheadLast) return;
+  appleTypeaheadLast = term;
+
+  if (appleTypeaheadTimer) clearTimeout(appleTypeaheadTimer);
+  appleTypeaheadTimer = setTimeout(() => {
+    if (String(appleSearchTermInput.value || '').trim().length >= 2) {
+      runAppleMusicSearch();
+    } else {
+      appleSearchResults.textContent = '';
+      setStatus(appleSearchStatus, 'Type at least 2 characters to search.', 'neutral');
+    }
+  }, 250);
 });
 
 appleSearchTermInput.addEventListener('keydown', (event) => {

@@ -80,7 +80,7 @@ alter table public.song_requests
 
 alter table public.song_requests
   add constraint song_requests_service_chk
-  check (service in ('Apple Music', 'Spotify', 'YouTube'));
+  check (service in ('Apple Music', 'Spotify', 'SoundCloud'));
 
 alter table public.song_requests
   add constraint song_requests_status_chk
@@ -404,7 +404,7 @@ begin
     raise exception 'Invalid party code';
   end if;
 
-  if svc not in ('Apple Music','Spotify','YouTube') then
+  if svc not in ('Apple Music','Spotify','SoundCloud') then
     raise exception 'Unsupported music service';
   end if;
 
