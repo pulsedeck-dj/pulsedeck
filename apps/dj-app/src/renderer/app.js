@@ -841,8 +841,9 @@ function buildGamdlCommand({ baseFolderPath, partyFolderPath, songUrl }) {
   const outputPath = shellPath(String(partyFolderPath || baseFolderPath || '').trim());
   const url = String(songUrl || '').trim();
   // Explicitly set cookies + output so gamdl never searches cookies in the party folder.
+  // Then flatten audio files into the party folder root and remove non-audio extras.
   // `&& exit` closes the terminal session after a successful download.
-  return `gamdl --cookies-path \"${cookiesPath}\" --output-path \"${outputPath}\" \"${url}\" && exit`;
+  return `OUT=\"${outputPath}\" && gamdl --cookies-path \"${cookiesPath}\" --output-path \"$OUT\" \"${url}\" && find \"$OUT\" -type f \\( -iname \"*.m4a\" -o -iname \"*.mp3\" -o -iname \"*.wav\" -o -iname \"*.aiff\" -o -iname \"*.aif\" -o -iname \"*.flac\" -o -iname \"*.aac\" -o -iname \"*.ogg\" -o -iname \"*.alac\" \\) -print0 | while IFS= read -r -d '' f; do b=\"$(basename \"$f\")\"; [ \"$f\" = \"$OUT/$b\" ] && continue; t=\"$OUT/$b\"; if [ -e \"$t\" ]; then i=1; n=\"\${b%.*}\"; e=\"\${b##*.}\"; while [ -e \"$OUT/\${n} (\${i}).\${e}\" ]; do i=$((i+1)); done; t=\"$OUT/\${n} (\${i}).\${e}\"; fi; mv \"$f\" \"$t\"; done && find \"$OUT\" -type f ! \\( -iname \"*.m4a\" -o -iname \"*.mp3\" -o -iname \"*.wav\" -o -iname \"*.aiff\" -o -iname \"*.aif\" -o -iname \"*.flac\" -o -iname \"*.aac\" -o -iname \"*.ogg\" -o -iname \"*.alac\" \\) -delete && find \"$OUT\" -depth -type d -empty -delete && exit`;
 }
 
 async function hydratePartyInfoIntoDownloadState(state) {
