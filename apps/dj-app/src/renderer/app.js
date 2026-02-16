@@ -46,6 +46,7 @@ const stageSetupBtn = document.getElementById('stageSetupBtn');
 const stageMarkPlayedBtn = document.getElementById('stageMarkPlayedBtn');
 const stageSkipBtn = document.getElementById('stageSkipBtn');
 const stageOpenLinkBtn = document.getElementById('stageOpenLinkBtn');
+const stageDownloadBtn = document.getElementById('stageDownloadBtn');
 const stageCopyBtn = document.getElementById('stageCopyBtn');
 const stagePreviewCount = document.getElementById('stagePreviewCount');
 const stagePreviewList = document.getElementById('stagePreviewList');
@@ -73,12 +74,31 @@ const setupCloseBtn = document.getElementById('setupCloseBtn');
 const setupOpenAppleMusicWebBtn = document.getElementById('setupOpenAppleMusicWebBtn');
 const setupOpenGuestSiteBtn = document.getElementById('setupOpenGuestSiteBtn');
 
+const downloadModal = document.getElementById('downloadModal');
+const downloadCloseBtn = document.getElementById('downloadCloseBtn');
+const downloadStepChecklist = document.getElementById('downloadStepChecklist');
+const downloadStepCommand = document.getElementById('downloadStepCommand');
+const dlCheckCookies = document.getElementById('dlCheckCookies');
+const dlCheckPython = document.getElementById('dlCheckPython');
+const dlCheckFfmpeg = document.getElementById('dlCheckFfmpeg');
+const dlCheckGamdl = document.getElementById('dlCheckGamdl');
+const dlPickFolderBtn = document.getElementById('dlPickFolderBtn');
+const dlOpenGamdlBtn = document.getElementById('dlOpenGamdlBtn');
+const dlFolderLabel = document.getElementById('dlFolderLabel');
+const dlChecklistDoneBtn = document.getElementById('dlChecklistDoneBtn');
+const dlCommandBlock = document.getElementById('dlCommandBlock');
+const dlCopyCmdBtn = document.getElementById('dlCopyCmdBtn');
+const dlBackBtn = document.getElementById('dlBackBtn');
+
 let unsubscribe = null;
 let queueItems = [];
 let activeWindow = 'booth';
 let lastSharePayload = null;
 let queueOrder = 'oldest';
 let qrExportPreset = 'iphone';
+
+const DOWNLOAD_HELPER_KEY = 'pulse_dj_download_helper';
+const GAMDL_REPO_URL = 'https://github.com/glomatico/gamdl';
 
 const QUEUE_ORDER_KEY = 'pulse_dj_queue_order';
 
@@ -630,6 +650,7 @@ function renderStage() {
     if (stageSkipBtn) stageSkipBtn.disabled = true;
     if (stageOpenLinkBtn) stageOpenLinkBtn.classList.add('hidden');
     if (stageCopyBtn) stageCopyBtn.classList.add('hidden');
+    if (stageDownloadBtn) stageDownloadBtn.disabled = true;
 
     renderStagePreview([]);
     return;
@@ -670,6 +691,11 @@ function renderStage() {
     }
   }
 
+  if (stageDownloadBtn) {
+    stageDownloadBtn.disabled = !Boolean(current.songUrl);
+    stageDownloadBtn.onclick = () => openDownloadFlowForSong(current.songUrl);
+  }
+
   renderStagePreview(queued.slice(1, 6));
 }
 
@@ -706,6 +732,155 @@ function setSetupVisible(visible) {
   }
 }
 
+function safeParseJson(value, fallback) {
+  try {
+    const parsed = JSON.parse(String(value || ''));
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function loadDownloadHelper() {
+  try {
+    const raw = window.localStorage.getItem(DOWNLOAD_HELPER_KEY);
+    const parsed = safeParseJson(raw, {});
+    return {
+      visitedRepo: Boolean(parsed.visitedRepo),
+      hasCookies: Boolean(parsed.hasCookies),
+      hasPython: Boolean(parsed.hasPython),
+      hasFfmpeg: Boolean(parsed.hasFfmpeg),
+      hasGamdl: Boolean(parsed.hasGamdl),
+      folderPath: String(parsed.folderPath || '').trim()
+    };
+  } catch {
+    return {
+      visitedRepo: false,
+      hasCookies: false,
+      hasPython: false,
+      hasFfmpeg: false,
+      hasGamdl: false,
+      folderPath: ''
+    };
+  }
+}
+
+function saveDownloadHelper(state) {
+  try {
+    window.localStorage.setItem(DOWNLOAD_HELPER_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
+function downloadChecklistComplete(state) {
+  return Boolean(state?.hasCookies && state?.hasPython && state?.hasFfmpeg && state?.hasGamdl && state?.folderPath);
+}
+
+function setDownloadVisible(visible) {
+  if (!downloadModal) return;
+  if (visible) {
+    downloadModal.classList.remove('hidden');
+    downloadModal.setAttribute('aria-hidden', 'false');
+  } else {
+    downloadModal.classList.add('hidden');
+    downloadModal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function showDownloadStep(step) {
+  const showChecklist = step === 'checklist';
+  if (downloadStepChecklist) downloadStepChecklist.classList.toggle('hidden', !showChecklist);
+  if (downloadStepCommand) downloadStepCommand.classList.toggle('hidden', showChecklist);
+}
+
+function basename(pathLike) {
+  const value = String(pathLike || '').trim();
+  if (!value) return '';
+  const parts = value.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || value;
+}
+
+function tildePathIfHome(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  // Keep it simple: if user chose a Desktop folder, they usually want to see ~/Desktop/NAME.
+  const desktopMatch = text.match(/\/Users\/[^/]+\/Desktop\/(.+)$/);
+  if (desktopMatch) return `~/Desktop/${desktopMatch[1]}`;
+  return text;
+}
+
+function buildGamdlCommand(folderPath, songUrl) {
+  const folder = tildePathIfHome(folderPath);
+  const url = String(songUrl || '').trim();
+  const mac = `cd \"${folder}\" && gamdl \"${url}\"`;
+  const win = `cd /d \"${folderPath}\" && gamdl \"${url}\"`;
+  return `macOS / Linux:\\n${mac}\\n\\nWindows (cmd):\\n${win}`;
+}
+
+function syncDownloadUiFromState(state) {
+  if (dlCheckCookies) dlCheckCookies.checked = Boolean(state.hasCookies);
+  if (dlCheckPython) dlCheckPython.checked = Boolean(state.hasPython);
+  if (dlCheckFfmpeg) dlCheckFfmpeg.checked = Boolean(state.hasFfmpeg);
+  if (dlCheckGamdl) dlCheckGamdl.checked = Boolean(state.hasGamdl);
+  if (dlFolderLabel) {
+    dlFolderLabel.textContent = state.folderPath ? `Folder: ${state.folderPath}` : 'Folder: not selected';
+  }
+  if (dlChecklistDoneBtn) {
+    dlChecklistDoneBtn.disabled = !downloadChecklistComplete(state);
+  }
+}
+
+function syncStateFromDownloadUi(state) {
+  return {
+    ...state,
+    hasCookies: Boolean(dlCheckCookies?.checked),
+    hasPython: Boolean(dlCheckPython?.checked),
+    hasFfmpeg: Boolean(dlCheckFfmpeg?.checked),
+    hasGamdl: Boolean(dlCheckGamdl?.checked)
+  };
+}
+
+let downloadActiveSongUrl = '';
+
+async function openDownloadFlowForSong(songUrl) {
+  if (!songUrl) {
+    appendLog('warning', 'This request has no Apple Music URL to download.', new Date().toISOString());
+    return;
+  }
+
+  downloadActiveSongUrl = String(songUrl || '').trim();
+
+  let state = loadDownloadHelper();
+
+  // 1st click: send them to official repo.
+  if (!state.visitedRepo) {
+    try {
+      await window.djApi.openUrl({ url: GAMDL_REPO_URL });
+      state.visitedRepo = true;
+      saveDownloadHelper(state);
+      appendLog('info', 'Opened gamdl GitHub. Install it, then click Download Cmd again.', new Date().toISOString());
+    } catch {
+      appendLog('error', 'Could not open browser. Visit gamdl GitHub manually.', new Date().toISOString());
+    }
+    return;
+  }
+
+  // 2nd click: checklist until complete.
+  if (!downloadChecklistComplete(state)) {
+    showDownloadStep('checklist');
+    syncDownloadUiFromState(state);
+    setDownloadVisible(true);
+    return;
+  }
+
+  // After checklist complete: show command for current song.
+  showDownloadStep('command');
+  if (dlCommandBlock) {
+    dlCommandBlock.textContent = buildGamdlCommand(state.folderPath, songUrl);
+  }
+  setDownloadVisible(true);
+}
 function setQrPreset(preset) {
   qrExportPreset = preset === 'ipad' ? 'ipad' : 'iphone';
   if (qrPresetIphoneBtn) qrPresetIphoneBtn.classList.toggle('is-active', qrExportPreset === 'iphone');
@@ -1146,6 +1321,7 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     setQrVisible(false);
     setSetupVisible(false);
+    setDownloadVisible(false);
   }
 });
 
@@ -1200,6 +1376,84 @@ if (setupOpenGuestSiteBtn) {
     } catch {
       // ignore
     }
+  });
+}
+
+function updateDownloadHelperFromUi() {
+  let state = loadDownloadHelper();
+  state = syncStateFromDownloadUi(state);
+  saveDownloadHelper(state);
+  syncDownloadUiFromState(state);
+}
+
+if (downloadCloseBtn) {
+  downloadCloseBtn.addEventListener('click', () => setDownloadVisible(false));
+}
+
+if (downloadModal) {
+  downloadModal.addEventListener('click', (event) => {
+    if (event.target === downloadModal) setDownloadVisible(false);
+  });
+}
+
+if (dlOpenGamdlBtn) {
+  dlOpenGamdlBtn.addEventListener('click', async () => {
+    try {
+      await window.djApi.openUrl({ url: GAMDL_REPO_URL });
+      const state = { ...loadDownloadHelper(), visitedRepo: true };
+      saveDownloadHelper(state);
+      syncDownloadUiFromState(state);
+    } catch {
+      // ignore
+    }
+  });
+}
+
+if (dlPickFolderBtn) {
+  dlPickFolderBtn.addEventListener('click', async () => {
+    try {
+      const result = await window.djApi.pickFolder();
+      if (!result?.ok || !result.folderPath) return;
+      const state = { ...loadDownloadHelper(), folderPath: String(result.folderPath || '').trim() };
+      saveDownloadHelper(state);
+      syncDownloadUiFromState(state);
+    } catch {
+      // ignore
+    }
+  });
+}
+
+for (const el of [dlCheckCookies, dlCheckPython, dlCheckFfmpeg, dlCheckGamdl]) {
+  if (!el) continue;
+  el.addEventListener('change', () => updateDownloadHelperFromUi());
+}
+
+if (dlChecklistDoneBtn) {
+  dlChecklistDoneBtn.addEventListener('click', () => {
+    updateDownloadHelperFromUi();
+    const state = loadDownloadHelper();
+    if (!downloadChecklistComplete(state)) return;
+    showDownloadStep('command');
+    if (dlCommandBlock) {
+      dlCommandBlock.textContent = buildGamdlCommand(state.folderPath, downloadActiveSongUrl);
+    }
+  });
+}
+
+if (dlBackBtn) {
+  dlBackBtn.addEventListener('click', () => {
+    showDownloadStep('checklist');
+    syncDownloadUiFromState(loadDownloadHelper());
+  });
+}
+
+if (dlCopyCmdBtn) {
+  dlCopyCmdBtn.addEventListener('click', async () => {
+    const text = String(dlCommandBlock?.textContent || '').trim();
+    if (!text) return;
+    const ok = await copyToClipboard(text);
+    if (ok) appendLog('success', 'Command copied. Paste it in Terminal.', new Date().toISOString());
+    else appendLog('error', 'Could not copy command.', new Date().toISOString());
   });
 }
 

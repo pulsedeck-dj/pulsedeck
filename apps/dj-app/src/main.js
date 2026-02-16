@@ -757,6 +757,14 @@ app.whenReady().then(() => {
   ipcMain.handle('dj:mark-queued', async (_event, payload) => updateRequestStatus(payload?.requestId, 'queued'));
   ipcMain.handle('dj:mark-rejected', async (_event, payload) => updateRequestStatus(payload?.requestId, 'rejected'));
   ipcMain.handle('file:save-png', async (_event, payload) => savePngFile(payload));
+  ipcMain.handle('file:pick-folder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose folder (cookies.txt, downloads, etc.)',
+      properties: ['openDirectory']
+    });
+    if (result.canceled || !result.filePaths?.length) return { ok: false, canceled: true };
+    return { ok: true, folderPath: result.filePaths[0] };
+  });
   ipcMain.handle('overlay:open', async () => {
     openOverlayWindow();
     return { ok: true };

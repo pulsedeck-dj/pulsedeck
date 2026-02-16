@@ -131,6 +131,7 @@
               <a id="stageOpenLinkBtn" class="btn btn-ghost" href="#" target="_blank" rel="noreferrer noopener"
                 >Open Link</a
               >
+              <button id="stageDownloadBtn" class="btn btn-ghost" type="button">Download Cmd</button>
               <button id="stageCopyBtn" class="btn btn-ghost" type="button">Copy</button>
             </div>
 
@@ -260,6 +261,61 @@
           <div class="qr-export" style="margin-top: 16px">
             <button id="setupOpenAppleMusicWebBtn" class="btn btn-primary" type="button">Open Apple Music</button>
             <button id="setupOpenGuestSiteBtn" class="btn btn-ghost" type="button">Open Guest Site</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="downloadModal" class="qr-modal hidden" aria-hidden="true">
+      <div class="qr-stage">
+        <div class="qr-light qr-light-a"></div>
+        <div class="qr-light qr-light-b"></div>
+        <section class="qr-card" role="dialog" aria-modal="true" aria-label="Download helper">
+          <button id="downloadCloseBtn" class="btn btn-ghost qr-close">Close</button>
+          <p class="eyebrow">Manual Download Helper</p>
+          <h2 class="qr-party-code" style="font-size: 44px; letter-spacing: 0.04em">gamdl Command</h2>
+          <p class="qr-subtitle">
+            PulseDeck will never run download commands. This page only helps you copy the correct command for your terminal.
+          </p>
+
+          <div id="downloadStepChecklist" class="download-step">
+            <div class="download-checklist">
+              <label class="download-check">
+                <input id="dlCheckCookies" type="checkbox" />
+                <span>I exported my Apple Music <code>cookies.txt</code></span>
+              </label>
+              <label class="download-check">
+                <input id="dlCheckPython" type="checkbox" />
+                <span>I installed Python</span>
+              </label>
+              <label class="download-check">
+                <input id="dlCheckFfmpeg" type="checkbox" />
+                <span>I installed FFmpeg</span>
+              </label>
+              <label class="download-check">
+                <input id="dlCheckGamdl" type="checkbox" />
+                <span>I installed <code>gamdl</code></span>
+              </label>
+            </div>
+
+            <div class="qr-export" style="margin-top: 12px">
+              <button id="dlPickFolderBtn" class="btn btn-primary" type="button">Choose Folder</button>
+              <button id="dlOpenGamdlBtn" class="btn btn-ghost" type="button">Open gamdl GitHub</button>
+            </div>
+            <p id="dlFolderLabel" class="micro-note" style="margin-top: 10px">Folder: not selected</p>
+
+            <div class="qr-export" style="margin-top: 12px">
+              <button id="dlChecklistDoneBtn" class="btn btn-accent" type="button">Done</button>
+            </div>
+          </div>
+
+          <div id="downloadStepCommand" class="download-step hidden">
+            <p class="hint" style="margin-top: 0">Copy/paste into Terminal.</p>
+            <pre id="dlCommandBlock" class="download-command"></pre>
+            <div class="qr-export" style="margin-top: 12px">
+              <button id="dlCopyCmdBtn" class="btn btn-primary" type="button">Copy Command</button>
+              <button id="dlBackBtn" class="btn btn-ghost" type="button">Back</button>
+            </div>
           </div>
         </section>
       </div>

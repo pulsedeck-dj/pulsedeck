@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('djApi', {
   markQueued: (payload) => ipcRenderer.invoke('dj:mark-queued', payload),
   markRejected: (payload) => ipcRenderer.invoke('dj:mark-rejected', payload),
   savePng: (payload) => ipcRenderer.invoke('file:save-png', payload),
+  pickFolder: () => ipcRenderer.invoke('file:pick-folder'),
   openOverlay: () => ipcRenderer.invoke('overlay:open'),
   closeOverlay: () => ipcRenderer.invoke('overlay:close'),
   getOverlayState: () => ipcRenderer.invoke('overlay:state'),

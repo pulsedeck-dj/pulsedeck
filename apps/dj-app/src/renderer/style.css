@@ -771,6 +771,48 @@ input:focus {
   word-break: break-all;
 }
 
+.download-checklist {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  text-align: left;
+}
+
+.download-check {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 0.95rem;
+  color: #2a3144;
+}
+
+.download-check input {
+  margin-top: 3px;
+}
+
+.download-check code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.92em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.download-command {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #0f1322;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.9rem;
+  line-height: 1.25rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .hidden {
   display: none;
 }
