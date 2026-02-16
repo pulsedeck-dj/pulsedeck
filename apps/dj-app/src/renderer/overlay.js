@@ -10,6 +10,7 @@ const overlayCopyBtn = document.getElementById('overlayCopyBtn');
 
 let queueItems = [];
 let unsubscribe = null;
+const DOWNLOAD_HELPER_KEY = 'pulse_dj_download_helper';
 
 function nowLabel(iso) {
   const date = iso ? new Date(iso) : new Date();
@@ -43,6 +44,46 @@ function sanitizeQueueEntry(entry) {
     playedAt: String(entry?.playedAt || ''),
     playedBy: String(entry?.playedBy || '')
   };
+}
+
+function safeParseJson(value, fallback) {
+  try {
+    const parsed = JSON.parse(String(value || ''));
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readDownloadHelper() {
+  const parsed = safeParseJson(window.localStorage.getItem(DOWNLOAD_HELPER_KEY), {});
+  return {
+    baseFolderPath: String(parsed.baseFolderPath || '').trim(),
+    partyFolderPath: String(parsed.partyFolderPath || '').trim()
+  };
+}
+
+function shellPath(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const homeMatch = text.match(/^\/Users\/[^/]+\/(.+)$/);
+  if (homeMatch) return `$HOME/${homeMatch[1]}`;
+  return text;
+}
+
+function buildCommandFromSongUrl(songUrl) {
+  const helper = readDownloadHelper();
+  const baseFolderPath = helper.baseFolderPath;
+  const partyFolderPath = helper.partyFolderPath || helper.baseFolderPath;
+  const url = String(songUrl || '').trim();
+
+  if (baseFolderPath && partyFolderPath) {
+    const cookiesPath = shellPath(`${baseFolderPath}/cookies.txt`);
+    const outputPath = shellPath(partyFolderPath);
+    return `gamdl --cookies-path \"${cookiesPath}\" --output-path \"${outputPath}\" \"${url}\" && exit`;
+  }
+
+  return `gamdl \"${url}\" && exit`;
 }
 
 function setQueue(itemsInput) {
@@ -79,7 +120,11 @@ function render() {
     overlayPlayedBtn.disabled = true;
     overlaySkipBtn.disabled = true;
     overlayOpenBtn.classList.add('hidden');
-    overlayCopyBtn.classList.add('hidden');
+    overlayCopyBtn.classList.remove('hidden');
+    overlayCopyBtn.textContent = 'Copy';
+    overlayCopyBtn.onclick = async () => {
+      await navigator.clipboard.writeText('No song selected yet.').catch(() => {});
+    };
     return;
   }
 
@@ -110,10 +155,16 @@ function render() {
   if (current.songUrl) {
     overlayOpenBtn.href = current.songUrl;
     overlayOpenBtn.classList.remove('hidden');
-    overlayCopyBtn.classList.add('hidden');
+    overlayCopyBtn.classList.remove('hidden');
+    overlayCopyBtn.textContent = 'Copy Cmd';
+    overlayCopyBtn.onclick = async () => {
+      const cmd = buildCommandFromSongUrl(current.songUrl);
+      await navigator.clipboard.writeText(cmd).catch(() => {});
+    };
   } else {
     overlayOpenBtn.classList.add('hidden');
     overlayCopyBtn.classList.remove('hidden');
+    overlayCopyBtn.textContent = 'Copy';
     overlayCopyBtn.onclick = async () => {
       await navigator.clipboard.writeText(`${current.title} - ${current.artist}`).catch(() => {});
     };
@@ -151,4 +202,3 @@ init();
 window.addEventListener('beforeunload', () => {
   if (unsubscribe) unsubscribe();
 });
-
