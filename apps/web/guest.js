@@ -211,15 +211,40 @@ async function itunesSongSearch(term, limit = 8) {
   const q = String(term || '').trim();
   if (q.length < 2) return [];
 
-  // iTunes Search API doesn't send CORS headers, so use JSONP.
-  const url = new URL('https://itunes.apple.com/search');
-  url.searchParams.set('term', q);
-  url.searchParams.set('media', 'music');
-  url.searchParams.set('entity', 'song');
-  url.searchParams.set('country', 'US');
-  url.searchParams.set('limit', String(Math.max(1, Math.min(12, Number(limit) || 8))));
+  // iTunes Search API via JSONP with retry + endpoint fallback for transient script-load failures.
+  const queryParams = new URLSearchParams();
+  queryParams.set('term', q);
+  queryParams.set('media', 'music');
+  queryParams.set('entity', 'song');
+  queryParams.set('country', 'US');
+  queryParams.set('limit', String(Math.max(1, Math.min(12, Number(limit) || 8))));
 
-  const data = await jsonp(url.toString(), { timeoutMs: 9000, callbackParam: 'callback' });
+  const endpoints = [
+    `https://itunes.apple.com/search?${queryParams.toString()}`,
+    `https://ax.itunes.apple.com/WebObjects/MZStoreServices.woa/ws/wsSearch?${queryParams.toString()}`
+  ];
+
+  let lastError = null;
+  let data = null;
+
+  for (const endpoint of endpoints) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        data = await jsonp(endpoint, { timeoutMs: 9000, callbackParam: 'callback' });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        await new Promise((resolve) => setTimeout(resolve, 240 * (attempt + 1)));
+      }
+    }
+    if (data) break;
+  }
+
+  if (!data) {
+    throw lastError || new Error('Network error. Please retry.');
+  }
+
   const rows = Array.isArray(data?.results) ? data.results : [];
 
   return rows
@@ -634,7 +659,12 @@ async function runAppleMusicSearch() {
       );
     }
   } catch (error) {
-    setStatus(appleSearchStatus, error.message || 'Apple Music search failed.', 'error');
+    const message = String(error?.message || 'Apple Music search failed.');
+    if (message.toLowerCase().includes('network error')) {
+      setStatus(appleSearchStatus, 'Network error. Retry search. If it persists, disable ad/script blockers.', 'error');
+    } else {
+      setStatus(appleSearchStatus, message, 'error');
+    }
   } finally {
     setButtonLoading(appleSearchBtn, false, 'Searching...', 'Search');
   }
