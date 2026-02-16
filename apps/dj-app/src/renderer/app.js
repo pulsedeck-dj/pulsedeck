@@ -836,12 +836,13 @@ function shellPath(value) {
   return text;
 }
 
-function buildGamdlCommand(folderPath, songUrl) {
-  const folder = shellPath(folderPath);
+function buildGamdlCommand({ baseFolderPath, partyFolderPath, songUrl }) {
+  const cookiesPath = shellPath(`${String(baseFolderPath || '').trim()}/cookies.txt`);
+  const outputPath = shellPath(String(partyFolderPath || baseFolderPath || '').trim());
   const url = String(songUrl || '').trim();
-  // DJ app is primarily macOS; keep this as a single copy/paste line.
+  // Explicitly set cookies + output so gamdl never searches cookies in the party folder.
   // `&& exit` closes the terminal session after a successful download.
-  return `cd \"${folder}\" && gamdl \"${url}\" && exit`;
+  return `gamdl --cookies-path \"${cookiesPath}\" --output-path \"${outputPath}\" \"${url}\" && exit`;
 }
 
 async function hydratePartyInfoIntoDownloadState(state) {
@@ -954,8 +955,11 @@ async function openDownloadFlowForSong(songUrl) {
   // After checklist complete: show command for current song.
   showDownloadStep('command');
   if (dlCommandBlock) {
-    const runFolder = state.partyFolderPath || state.baseFolderPath;
-    dlCommandBlock.textContent = buildGamdlCommand(runFolder, songUrl);
+    dlCommandBlock.textContent = buildGamdlCommand({
+      baseFolderPath: state.baseFolderPath,
+      partyFolderPath: state.partyFolderPath,
+      songUrl
+    });
   }
   try {
     const watchFolder = state.partyFolderPath || state.baseFolderPath;
@@ -1583,8 +1587,11 @@ if (dlChecklistDoneBtn) {
     syncDownloadUiFromState(state);
     showDownloadStep('command');
     if (dlCommandBlock) {
-      const runFolder = state.partyFolderPath || state.baseFolderPath;
-      dlCommandBlock.textContent = buildGamdlCommand(runFolder, downloadActiveSongUrl);
+      dlCommandBlock.textContent = buildGamdlCommand({
+        baseFolderPath: state.baseFolderPath,
+        partyFolderPath: state.partyFolderPath,
+        songUrl: downloadActiveSongUrl
+      });
     }
     const watchFolder = state.partyFolderPath || state.baseFolderPath;
     window.djApi
