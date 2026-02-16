@@ -41,7 +41,9 @@ const stageService = document.getElementById('stageService');
 const stageTitle = document.getElementById('stageTitle');
 const stageArtist = document.getElementById('stageArtist');
 const stageMeta = document.getElementById('stageMeta');
+const stageOverlayBtn = document.getElementById('stageOverlayBtn');
 const stageMarkPlayedBtn = document.getElementById('stageMarkPlayedBtn');
+const stageSkipBtn = document.getElementById('stageSkipBtn');
 const stageOpenLinkBtn = document.getElementById('stageOpenLinkBtn');
 const stageCopyBtn = document.getElementById('stageCopyBtn');
 const stagePreviewCount = document.getElementById('stagePreviewCount');
@@ -324,14 +326,16 @@ async function markRequestQueued(requestId, button) {
   }
 }
 
-async function markRequestRejected(requestId, button) {
-  setButtonBusy(button, true, 'Removing...', 'X');
+async function markRequestRejected(requestId, button, labels = {}) {
+  const busyLabel = labels?.busyLabel || 'Removing...';
+  const idleLabel = labels?.idleLabel || (button?.textContent?.trim() ? button.textContent.trim() : 'X');
+  setButtonBusy(button, true, busyLabel, idleLabel);
   try {
     await window.djApi.markRejected({ requestId });
   } catch (error) {
     appendLog('error', error.message || 'Failed to reject request.', new Date().toISOString());
   } finally {
-    setButtonBusy(button, false, 'Removing...', 'X');
+    setButtonBusy(button, false, busyLabel, idleLabel);
   }
 }
 
@@ -617,6 +621,7 @@ function renderStage() {
     stageMeta.textContent = '';
 
     if (stageMarkPlayedBtn) stageMarkPlayedBtn.disabled = true;
+    if (stageSkipBtn) stageSkipBtn.disabled = true;
     if (stageOpenLinkBtn) stageOpenLinkBtn.classList.add('hidden');
     if (stageCopyBtn) stageCopyBtn.classList.add('hidden');
 
@@ -633,6 +638,15 @@ function renderStage() {
   if (stageMarkPlayedBtn) {
     stageMarkPlayedBtn.disabled = false;
     stageMarkPlayedBtn.onclick = () => markRequestPlayed(current.id, stageMarkPlayedBtn);
+  }
+
+  if (stageSkipBtn) {
+    stageSkipBtn.disabled = false;
+    stageSkipBtn.onclick = () =>
+      markRequestRejected(current.id, stageSkipBtn, {
+        busyLabel: 'Skipping...',
+        idleLabel: 'Skip'
+      });
   }
 
   if (stageCopyBtn) {
@@ -1122,6 +1136,16 @@ window.addEventListener('beforeunload', () => {
 });
 
 setWindow('booth');
+
+if (stageOverlayBtn) {
+  stageOverlayBtn.addEventListener('click', async () => {
+    try {
+      await window.djApi.openOverlay();
+    } catch (error) {
+      appendLog('error', error.message || 'Could not open overlay.', new Date().toISOString());
+    }
+  });
+}
 
 initialize().catch((error) => {
   setStatus('error', error.message || 'Initialization failed');

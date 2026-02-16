@@ -111,7 +111,10 @@
           <article class="panel stage-panel">
             <div class="panel-head">
               <h2>Next Up</h2>
-              <span id="stageSeq" class="count-pill">--</span>
+              <div class="panel-head-actions">
+                <button id="stageOverlayBtn" class="btn btn-ghost btn-mini" type="button">Overlay</button>
+                <span id="stageSeq" class="count-pill">--</span>
+              </div>
             </div>
 
             <div id="stageCard" class="stage-card">
@@ -123,6 +126,7 @@
 
             <div class="stage-actions">
               <button id="stageMarkPlayedBtn" class="btn btn-success" type="button">Mark Played</button>
+              <button id="stageSkipBtn" class="btn btn-danger" type="button">Skip</button>
               <a id="stageOpenLinkBtn" class="btn btn-ghost" href="#" target="_blank" rel="noreferrer noopener"
                 >Open Link</a
               >

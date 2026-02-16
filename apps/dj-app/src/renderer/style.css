@@ -24,6 +24,85 @@ body {
   min-height: 100vh;
 }
 
+/* Overlay (always-on-top mini window) */
+.overlay-body {
+  background: transparent;
+  min-height: auto;
+}
+
+.overlay-shell {
+  padding: 14px;
+}
+
+.overlay-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(15, 19, 34, 0.55);
+  color: rgba(255, 255, 255, 0.9);
+  -webkit-app-region: drag;
+}
+
+.overlay-close {
+  -webkit-app-region: no-drag;
+}
+
+.overlay-title {
+  margin: 0;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+}
+
+.overlay-card {
+  margin-top: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.74));
+  padding: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+}
+
+.overlay-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.overlay-service {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #15698d;
+}
+
+.overlay-song {
+  margin: 12px 0 0;
+  font-family: 'Bebas Neue', Impact, sans-serif;
+  font-size: 2.4rem;
+  line-height: 0.95;
+}
+
+.overlay-artist {
+  margin: 4px 0 0;
+  color: #3f4960;
+  font-size: 0.95rem;
+}
+
+.overlay-actions {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .bg-orb {
   position: fixed;
   border-radius: 999px;

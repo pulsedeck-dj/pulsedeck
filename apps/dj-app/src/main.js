@@ -30,6 +30,7 @@ const DEFAULT_CONFIG = {
 
 let mainWindow = null;
 let liveConnection = null;
+let overlayWindow = null;
 
 function summarizeQueueForLog(requests) {
   const list = Array.isArray(requests) ? requests : [];
@@ -87,6 +88,18 @@ function sanitizeWebUrl(value, fallback = DEFAULT_GUEST_WEB_BASE) {
 function emit(event) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('dj:event', event);
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('dj:event', event);
+  }
+}
+
+function buildOverlayState() {
+  return {
+    ok: true,
+    connected: Boolean(liveConnection),
+    partyCode: liveConnection?.partyCode || '',
+    requests: Array.isArray(liveConnection?.lastRequests) ? liveConnection.lastRequests : []
+  };
 }
 
 function log(level, message) {
@@ -319,6 +332,7 @@ function emitQueueReplace(connection, requestsInput) {
 
   connection.requestIds = new Set(list.map((entry) => entry.id));
   connection.lastQueueFingerprint = fp;
+  connection.lastRequests = list;
 
   // Avoid UI flicker: only re-render the full list when something changed.
   if (fp !== prevFp) {
@@ -700,6 +714,39 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
+function openOverlayWindow() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.focus();
+    return overlayWindow;
+  }
+
+  overlayWindow = new BrowserWindow({
+    width: 420,
+    height: 360,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    frame: false,
+    transparent: true,
+    title: 'PulseDeck Overlay',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js')
+    }
+  });
+
+  overlayWindow.on('closed', () => {
+    overlayWindow = null;
+  });
+
+  overlayWindow.loadFile(path.join(__dirname, 'renderer', 'overlay.html'));
+  return overlayWindow;
+}
+
 app.whenReady().then(() => {
   ipcMain.handle('config:load', () => loadConfig());
   ipcMain.handle('config:save', (_event, payload) => saveConfig(payload));
@@ -710,6 +757,16 @@ app.whenReady().then(() => {
   ipcMain.handle('dj:mark-queued', async (_event, payload) => updateRequestStatus(payload?.requestId, 'queued'));
   ipcMain.handle('dj:mark-rejected', async (_event, payload) => updateRequestStatus(payload?.requestId, 'rejected'));
   ipcMain.handle('file:save-png', async (_event, payload) => savePngFile(payload));
+  ipcMain.handle('overlay:open', async () => {
+    openOverlayWindow();
+    return { ok: true };
+  });
+  ipcMain.handle('overlay:close', async () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.close();
+    overlayWindow = null;
+    return { ok: true };
+  });
+  ipcMain.handle('overlay:state', async () => buildOverlayState());
 
   createWindow();
 

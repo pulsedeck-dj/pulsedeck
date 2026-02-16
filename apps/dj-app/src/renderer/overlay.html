@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PulseDeck Overlay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="overlay-body">
+    <main class="overlay-shell">
+      <header class="overlay-bar" aria-label="Overlay header">
+        <div class="overlay-drag" aria-hidden="true"></div>
+        <p class="overlay-title">Next Up</p>
+        <button id="overlayCloseBtn" class="btn btn-ghost btn-mini overlay-close" type="button">Close</button>
+      </header>
+
+      <section class="overlay-card">
+        <div class="overlay-top">
+          <span id="overlaySeq" class="count-pill">--</span>
+          <span id="overlayService" class="overlay-service">---</span>
+        </div>
+        <p id="overlaySongTitle" class="overlay-song">Waiting for requests...</p>
+        <p id="overlaySongArtist" class="overlay-artist"></p>
+
+        <div class="overlay-actions">
+          <button id="overlayPlayedBtn" class="btn btn-success" type="button">Played</button>
+          <button id="overlaySkipBtn" class="btn btn-danger" type="button">Skip</button>
+          <a id="overlayOpenBtn" class="btn btn-ghost" href="#" target="_blank" rel="noreferrer noopener">Open</a>
+          <button id="overlayCopyBtn" class="btn btn-ghost" type="button">Copy</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="overlay.js"></script>
+  </body>
+</html>
+
