@@ -1517,14 +1517,26 @@ if (dlPickFolderBtn) {
     try {
       const result = await window.djApi.pickFolder();
       if (!result?.ok || !result.folderPath) return;
-      const state = {
+      let state = {
         ...loadDownloadHelper(),
         baseFolderPath: String(result.folderPath || '').trim(),
         partyFolderPath: ''
       };
+
+      // If we already know the party name/code (DJ connected), create the party folder immediately
+      // so the DJ can add it in djay right away.
+      state = await hydratePartyInfoIntoDownloadState(state);
+      state = await ensurePartyFolderForState(state);
       saveDownloadHelper(state);
       syncDownloadUiFromState(state);
       if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
+
+      if (state.openPartyFolder !== false) {
+        const folderToOpen = state.partyFolderPath || state.baseFolderPath;
+        if (folderToOpen) {
+          window.djApi.openPath({ path: folderToOpen }).catch(() => {});
+        }
+      }
     } catch {
       // ignore
     }
