@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('djApi', {
   getOverlayState: () => ipcRenderer.invoke('overlay:state'),
   openUrl: (payload) => ipcRenderer.invoke('system:open-url', payload),
   openPath: (payload) => ipcRenderer.invoke('system:open-path', payload),
+  openTerminal: () => ipcRenderer.invoke('system:open-terminal'),
   getPartyInfo: () => ipcRenderer.invoke('dj:party-info'),
   downloadsStart: (payload) => ipcRenderer.invoke('downloads:start', payload),
   downloadsStop: () => ipcRenderer.invoke('downloads:stop'),

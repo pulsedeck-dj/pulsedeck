@@ -93,6 +93,7 @@ const dlAutoOpenDjay = document.getElementById('dlAutoOpenDjay');
 const dlOpenPartyFolder = document.getElementById('dlOpenPartyFolder');
 const dlWatchLabel = document.getElementById('dlWatchLabel');
 const dlRevealLastBtn = document.getElementById('dlRevealLastBtn');
+const dlOpenTerminalBtn = document.getElementById('dlOpenTerminalBtn');
 const dlBackBtn = document.getElementById('dlBackBtn');
 
 let unsubscribe = null;
@@ -835,9 +836,9 @@ function tildePathIfHome(value) {
 function buildGamdlCommand(folderPath, songUrl) {
   const folder = tildePathIfHome(folderPath);
   const url = String(songUrl || '').trim();
-  const mac = `cd \"${folder}\" && gamdl \"${url}\"`;
-  const win = `cd /d \"${folderPath}\" && gamdl \"${url}\"`;
-  return `macOS / Linux:\\n${mac}\\n\\nWindows (cmd):\\n${win}`;
+  // DJ app is primarily macOS; keep this as a single copy/paste line.
+  // `&& exit` closes the terminal session after a successful download.
+  return `cd \"${folder}\" && gamdl \"${url}\" && exit`;
 }
 
 async function hydratePartyInfoIntoDownloadState(state) {
@@ -1615,6 +1616,17 @@ if (dlCopyCmdBtn) {
     const ok = await copyToClipboard(text);
     if (ok) appendLog('success', 'Command copied. Paste it in Terminal.', new Date().toISOString());
     else appendLog('error', 'Could not copy command.', new Date().toISOString());
+  });
+}
+
+if (dlOpenTerminalBtn) {
+  dlOpenTerminalBtn.addEventListener('click', async () => {
+    try {
+      await window.djApi.openTerminal();
+      appendLog('info', 'Terminal opened. Paste the command and press Enter.', new Date().toISOString());
+    } catch {
+      appendLog('warning', 'Could not open Terminal automatically.', new Date().toISOString());
+    }
   });
 }
 

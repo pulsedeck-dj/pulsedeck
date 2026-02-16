@@ -118,6 +118,33 @@ async function openInDjay(filePath) {
   }
 }
 
+async function openTerminal() {
+  if (process.platform === 'darwin') {
+    await new Promise((resolve, reject) => {
+      execFile('/usr/bin/open', ['-a', 'Terminal'], (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    return true;
+  }
+
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => {
+      execFile('cmd.exe', ['/c', 'start', 'cmd.exe'], () => resolve());
+    });
+    return true;
+  }
+
+  // Best-effort on Linux.
+  try {
+    await shell.openExternal('terminal:');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function stopDownloadsWatch() {
   if (downloadsWatcher.timer) {
     clearInterval(downloadsWatcher.timer);
@@ -970,6 +997,10 @@ app.whenReady().then(() => {
     if (!target) throw new Error('Missing path');
     await shell.openPath(target);
     return { ok: true };
+  });
+  ipcMain.handle('system:open-terminal', async () => {
+    const ok = await openTerminal();
+    return { ok };
   });
   ipcMain.handle('dj:party-info', async () => {
     return {
