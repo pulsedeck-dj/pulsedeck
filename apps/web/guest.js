@@ -421,6 +421,7 @@ async function joinPartyByCode(code) {
     setStatus(joinResult, 'Party code must be exactly 6 letters/numbers.', 'error');
     hidePanel(requestPanel);
     activePartyCode = null;
+    if (guestPartyName) guestPartyName.textContent = '';
     return false;
   }
 
@@ -455,6 +456,7 @@ async function joinPartyByCode(code) {
     hidePanel(requestPanel);
     stopJoinPolling();
     setStatus(joinResult, error.message || 'Unable to join party.', 'error');
+    if (guestPartyName) guestPartyName.textContent = '';
     return false;
   }
 }

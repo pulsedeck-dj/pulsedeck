@@ -19,6 +19,11 @@ create table if not exists public.parties (
   active_dj_session_id uuid
 );
 
+-- If you are applying this schema to an existing project, `create table if not exists` will not
+-- add new columns. Ensure the party name column exists for older installs.
+alter table public.parties
+  add column if not exists name text;
+
 create table if not exists public.dj_sessions (
   id uuid primary key default extensions.gen_random_uuid(),
   party_id uuid not null references public.parties(id) on delete cascade,
