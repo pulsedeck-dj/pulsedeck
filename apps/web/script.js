@@ -497,7 +497,8 @@ function setAuthToken(token) {
 function setAuthUi() {
   const isSignedIn = supabaseClient ? Boolean(authUser) : Boolean(authUser && authToken);
   const backendReady = Boolean(apiBase || supabaseClient);
-  createPartyBtn.disabled = !isSignedIn || !backendReady;
+  const partyNameReady = Boolean(String(partyNameInput?.value || '').trim());
+  createPartyBtn.disabled = !isSignedIn || !backendReady || !partyNameReady;
 
   if (isSignedIn) {
     // Hide auth inputs once signed in to keep the DJ flow focused.
@@ -1450,14 +1451,32 @@ logoutBtn.addEventListener('click', async () => {
   setWindow('dj');
 });
 
+if (partyNameInput) {
+  partyNameInput.addEventListener('input', () => {
+    setAuthUi();
+  });
+
+  partyNameInput.addEventListener('blur', () => {
+    partyNameInput.value = String(partyNameInput.value || '').trim();
+    setAuthUi();
+  });
+}
+
 createPartyBtn.addEventListener('click', async () => {
+  const partyNameGuard = String(partyNameInput?.value || '').trim();
+  if (!partyNameGuard) {
+    setStatus(createResult, 'Enter a party name first (ex: Austin & Jessica’s Wedding).', 'error');
+    setAuthUi();
+    return;
+  }
+
   setButtonLoading(createPartyBtn, true, 'Creating...', 'Create Party');
   setStatus(createResult, 'Generating secure party credentials...', 'info');
 
   try {
     let data;
     if (supabaseClient) {
-      const partyName = String(partyNameInput?.value || '').trim();
+      const partyName = partyNameGuard;
       const { data: rpcData, error } = await supabaseClient.rpc('create_party', { p_name: partyName });
       if (error) throw new Error(error.message || 'Failed to create party');
       const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
