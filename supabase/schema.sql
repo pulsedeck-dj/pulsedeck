@@ -190,9 +190,22 @@ declare
   dj_key_plain text;
   inserted boolean := false;
   party_name text := nullif(left(trim(regexp_replace(coalesce(p_name,''), '\s+', ' ', 'g')), 80), '');
+  last_created_at timestamptz;
 begin
   if owner is null then
     raise exception 'Not authenticated';
+  end if;
+
+  if party_name is null then
+    raise exception 'Party name is required';
+  end if;
+
+  select max(created_at) into last_created_at
+    from public.parties
+   where owner_id = owner;
+
+  if last_created_at is not null and last_created_at > now() - interval '60 seconds' then
+    raise exception 'Please wait before creating another party';
   end if;
 
   for i in 1..30 loop

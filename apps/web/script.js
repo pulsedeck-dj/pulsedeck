@@ -60,6 +60,8 @@ const PARTY_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const AUTH_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_SERVICES = new Set(['Apple Music', 'Spotify', 'SoundCloud']);
 const AUTH_TOKEN_KEY = 'pulse_auth_token';
+const PARTY_CREATE_COOLDOWN_KEY = 'pulse_party_create_cooldown_until';
+const PARTY_CREATE_COOLDOWN_MS = 60_000;
 const PASSWORD_MIN_LENGTH = 10;
 
 const tabGuest = document.getElementById('tabGuest');
@@ -140,6 +142,7 @@ let apiBase = readInitialApiBase();
 let activeWindow = 'guest';
 let activePartyCode = null;
 let authToken = window.localStorage.getItem(AUTH_TOKEN_KEY) || '';
+let partyCreateCooldownUntil = Number(window.localStorage.getItem(PARTY_CREATE_COOLDOWN_KEY) || '0') || 0;
 let authUser = null;
 let supabaseClient = null;
 let backendReachable = false;
@@ -494,11 +497,34 @@ function setAuthToken(token) {
   }
 }
 
+function cooldownRemainingMs() {
+  const until = Number(partyCreateCooldownUntil || 0) || 0;
+  return Math.max(0, until - Date.now());
+}
+
+function setPartyCreateCooldown(ms) {
+  const value = Math.max(0, Number(ms) || 0);
+  partyCreateCooldownUntil = value ? Date.now() + value : 0;
+  if (partyCreateCooldownUntil) {
+    window.localStorage.setItem(PARTY_CREATE_COOLDOWN_KEY, String(partyCreateCooldownUntil));
+  } else {
+    window.localStorage.removeItem(PARTY_CREATE_COOLDOWN_KEY);
+  }
+}
+
 function setAuthUi() {
   const isSignedIn = supabaseClient ? Boolean(authUser) : Boolean(authUser && authToken);
   const backendReady = Boolean(apiBase || supabaseClient);
   const partyNameReady = Boolean(String(partyNameInput?.value || '').trim());
-  createPartyBtn.disabled = !isSignedIn || !backendReady || !partyNameReady;
+  const cooldownMs = cooldownRemainingMs();
+  createPartyBtn.disabled = !isSignedIn || !backendReady || !partyNameReady || cooldownMs > 0;
+
+  if (cooldownMs > 0) {
+    const seconds = Math.ceil(cooldownMs / 1000);
+    createPartyBtn.textContent = `Wait ${seconds}s`;
+  } else if (createPartyBtn.textContent !== 'Create Party') {
+    createPartyBtn.textContent = 'Create Party';
+  }
 
   if (isSignedIn) {
     // Hide auth inputs once signed in to keep the DJ flow focused.
@@ -1470,6 +1496,14 @@ createPartyBtn.addEventListener('click', async () => {
     return;
   }
 
+  const remaining = cooldownRemainingMs();
+  if (remaining > 0) {
+    const seconds = Math.ceil(remaining / 1000);
+    setStatus(createResult, `Please wait ${seconds}s before creating another party.`, 'error');
+    setAuthUi();
+    return;
+  }
+
   setButtonLoading(createPartyBtn, true, 'Creating...', 'Create Party');
   setStatus(createResult, 'Generating secure party credentials...', 'info');
 
@@ -1502,6 +1536,10 @@ createPartyBtn.addEventListener('click', async () => {
     partyCodeInput.value = data.code;
     setStatus(joinResult, `Party code ${data.code} copied into Guest Window input.`, 'info');
     pushTimeline('success', `Party ${data.code} created.`);
+
+    // Anti-spam: 60s cooldown before creating another party.
+    setPartyCreateCooldown(PARTY_CREATE_COOLDOWN_MS);
+    setAuthUi();
   } catch (error) {
     if (error.status === 401) {
       authUser = null;
@@ -1510,8 +1548,7 @@ createPartyBtn.addEventListener('click', async () => {
     }
     setStatus(createResult, error.message || 'Failed to create party.', 'error');
   } finally {
-    createPartyBtn.textContent = 'Create Party';
-    createPartyBtn.disabled = supabaseClient ? !authUser : !(authUser && authToken && apiBase);
+    setAuthUi();
   }
 });
 
@@ -1681,3 +1718,14 @@ updateSystemStatus();
     setWindow('setup');
   }
 })();
+
+// Keep the Create Party cooldown label accurate.
+setInterval(() => {
+  if (!createPartyBtn) return;
+  if (!partyCreateCooldownUntil) return;
+  if (cooldownRemainingMs() <= 0) {
+    partyCreateCooldownUntil = 0;
+    window.localStorage.removeItem(PARTY_CREATE_COOLDOWN_KEY);
+  }
+  setAuthUi();
+}, 500);
