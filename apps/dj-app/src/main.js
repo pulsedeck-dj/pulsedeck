@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const axios = require('axios');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
@@ -31,6 +32,151 @@ const DEFAULT_CONFIG = {
 let mainWindow = null;
 let liveConnection = null;
 let overlayWindow = null;
+
+let downloadsWatcher = {
+  folderPath: '',
+  timer: null,
+  seen: new Set(),
+  autoOpenDjay: true,
+  lastFilePath: ''
+};
+
+const AUDIO_EXTENSIONS = new Set(['.m4a', '.mp3', '.wav', '.aiff', '.aif', '.flac', '.aac', '.ogg', '.alac']);
+
+function fileExists(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeStat(filePath) {
+  try {
+    return fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function walkAudioFiles(rootDir, maxDepth = 2, limit = 800) {
+  const results = [];
+  const root = String(rootDir || '').trim();
+  if (!root) return results;
+
+  function walk(dir, depth) {
+    if (results.length >= limit) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (results.length >= limit) return;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < maxDepth) walk(fullPath, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!AUDIO_EXTENSIONS.has(ext)) continue;
+      const st = safeStat(fullPath);
+      if (!st) continue;
+      results.push({ filePath: fullPath, mtimeMs: st.mtimeMs || 0 });
+    }
+  }
+
+  walk(root, 0);
+  return results;
+}
+
+async function openInDjay(filePath) {
+  const target = String(filePath || '').trim();
+  if (!target) return false;
+  if (process.platform !== 'darwin') return false;
+  if (!fileExists(target)) return false;
+
+  const candidates = ['djay', 'djay Pro', 'djay Pro AI'];
+  for (const name of candidates) {
+    // macOS: `open -a <AppName> <file>`
+    const ok = await new Promise((resolve) => {
+      execFile('/usr/bin/open', ['-a', name, target], (error) => resolve(!error));
+    });
+    if (ok) return true;
+  }
+
+  // Fallback: open with the OS default handler for the file.
+  try {
+    await shell.openPath(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function stopDownloadsWatch() {
+  if (downloadsWatcher.timer) {
+    clearInterval(downloadsWatcher.timer);
+  }
+  downloadsWatcher.timer = null;
+}
+
+function startDownloadsWatch(folderPath, options = {}) {
+  const folder = String(folderPath || '').trim();
+  if (!folder) throw new Error('Folder path is required');
+  const st = safeStat(folder);
+  if (!st || !st.isDirectory()) throw new Error('Selected path is not a folder');
+
+  downloadsWatcher.folderPath = folder;
+  downloadsWatcher.autoOpenDjay = options.autoOpenDjay !== false;
+  downloadsWatcher.lastFilePath = downloadsWatcher.lastFilePath || '';
+
+  stopDownloadsWatch();
+
+  // Prime: don't fire for existing files.
+  downloadsWatcher.seen = new Set(walkAudioFiles(folder, 2).map((f) => f.filePath));
+
+  downloadsWatcher.timer = setInterval(async () => {
+    const found = walkAudioFiles(downloadsWatcher.folderPath, 2);
+    let newestNew = null;
+
+    for (const entry of found) {
+      if (downloadsWatcher.seen.has(entry.filePath)) continue;
+      downloadsWatcher.seen.add(entry.filePath);
+      if (!newestNew || entry.mtimeMs > newestNew.mtimeMs) newestNew = entry;
+    }
+
+    if (!newestNew) return;
+
+    downloadsWatcher.lastFilePath = newestNew.filePath;
+
+    emit({
+      type: 'downloads:new-file',
+      filePath: newestNew.filePath,
+      at: new Date().toISOString()
+    });
+
+    if (downloadsWatcher.autoOpenDjay) {
+      const opened = await openInDjay(newestNew.filePath);
+      emit({
+        type: 'downloads:auto-open',
+        filePath: newestNew.filePath,
+        opened,
+        at: new Date().toISOString()
+      });
+    }
+  }, 1200);
+
+  return {
+    ok: true,
+    folderPath: downloadsWatcher.folderPath,
+    autoOpenDjay: downloadsWatcher.autoOpenDjay
+  };
+}
 
 function summarizeQueueForLog(requests) {
   const list = Array.isArray(requests) ? requests : [];
@@ -784,6 +930,29 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  ipcMain.handle('downloads:start', async (_event, payload) => {
+    return startDownloadsWatch(payload?.folderPath, { autoOpenDjay: payload?.autoOpenDjay });
+  });
+  ipcMain.handle('downloads:stop', async () => {
+    stopDownloadsWatch();
+    return { ok: true };
+  });
+  ipcMain.handle('downloads:status', async () => {
+    return {
+      ok: true,
+      folderPath: downloadsWatcher.folderPath,
+      watching: Boolean(downloadsWatcher.timer),
+      autoOpenDjay: Boolean(downloadsWatcher.autoOpenDjay),
+      lastFilePath: downloadsWatcher.lastFilePath
+    };
+  });
+  ipcMain.handle('downloads:reveal', async (_event, payload) => {
+    const filePath = String(payload?.filePath || '').trim();
+    if (!filePath) throw new Error('Missing file path');
+    shell.showItemInFolder(filePath);
+    return { ok: true };
+  });
+
   createWindow();
 
   app.on('activate', () => {
@@ -794,6 +963,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  stopDownloadsWatch();
   if (liveConnection?.heartbeatTimer) {
     clearInterval(liveConnection.heartbeatTimer);
   }

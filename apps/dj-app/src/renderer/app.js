@@ -88,6 +88,9 @@ const dlFolderLabel = document.getElementById('dlFolderLabel');
 const dlChecklistDoneBtn = document.getElementById('dlChecklistDoneBtn');
 const dlCommandBlock = document.getElementById('dlCommandBlock');
 const dlCopyCmdBtn = document.getElementById('dlCopyCmdBtn');
+const dlAutoOpenDjay = document.getElementById('dlAutoOpenDjay');
+const dlWatchLabel = document.getElementById('dlWatchLabel');
+const dlRevealLastBtn = document.getElementById('dlRevealLastBtn');
 const dlBackBtn = document.getElementById('dlBackBtn');
 
 let unsubscribe = null;
@@ -751,6 +754,7 @@ function loadDownloadHelper() {
       hasPython: Boolean(parsed.hasPython),
       hasFfmpeg: Boolean(parsed.hasFfmpeg),
       hasGamdl: Boolean(parsed.hasGamdl),
+      autoOpenDjay: parsed.autoOpenDjay !== false,
       folderPath: String(parsed.folderPath || '').trim()
     };
   } catch {
@@ -760,6 +764,7 @@ function loadDownloadHelper() {
       hasPython: false,
       hasFfmpeg: false,
       hasGamdl: false,
+      autoOpenDjay: true,
       folderPath: ''
     };
   }
@@ -823,6 +828,7 @@ function syncDownloadUiFromState(state) {
   if (dlCheckPython) dlCheckPython.checked = Boolean(state.hasPython);
   if (dlCheckFfmpeg) dlCheckFfmpeg.checked = Boolean(state.hasFfmpeg);
   if (dlCheckGamdl) dlCheckGamdl.checked = Boolean(state.hasGamdl);
+  if (dlAutoOpenDjay) dlAutoOpenDjay.checked = state.autoOpenDjay !== false;
   if (dlFolderLabel) {
     dlFolderLabel.textContent = state.folderPath ? `Folder: ${state.folderPath}` : 'Folder: not selected';
   }
@@ -837,7 +843,8 @@ function syncStateFromDownloadUi(state) {
     hasCookies: Boolean(dlCheckCookies?.checked),
     hasPython: Boolean(dlCheckPython?.checked),
     hasFfmpeg: Boolean(dlCheckFfmpeg?.checked),
-    hasGamdl: Boolean(dlCheckGamdl?.checked)
+    hasGamdl: Boolean(dlCheckGamdl?.checked),
+    autoOpenDjay: dlAutoOpenDjay ? Boolean(dlAutoOpenDjay.checked) : state.autoOpenDjay !== false
   };
 }
 
@@ -878,6 +885,12 @@ async function openDownloadFlowForSong(songUrl) {
   showDownloadStep('command');
   if (dlCommandBlock) {
     dlCommandBlock.textContent = buildGamdlCommand(state.folderPath, songUrl);
+  }
+  try {
+    await window.djApi.downloadsStart({ folderPath: state.folderPath, autoOpenDjay: state.autoOpenDjay !== false });
+    if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: on';
+  } catch {
+    if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
   }
   setDownloadVisible(true);
 }
@@ -1141,6 +1154,21 @@ async function initialize() {
 
     if (event.type === 'queue:add') {
       addQueueItem(event.request);
+    }
+
+    if (event.type === 'downloads:new-file') {
+      const filePath = String(event.filePath || '').trim();
+      const name = filePath ? basename(filePath) : 'download';
+      appendLog('success', `Download detected: ${name}`, event.at);
+      if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: on';
+      return;
+    }
+
+    if (event.type === 'downloads:auto-open') {
+      const opened = Boolean(event.opened);
+      if (opened) appendLog('info', 'Opened new download in djay.', event.at);
+      else appendLog('warning', 'New download detected, but could not open djay. Use Reveal Last.', event.at);
+      return;
     }
   });
 }
@@ -1417,6 +1445,7 @@ if (dlPickFolderBtn) {
       const state = { ...loadDownloadHelper(), folderPath: String(result.folderPath || '').trim() };
       saveDownloadHelper(state);
       syncDownloadUiFromState(state);
+      if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
     } catch {
       // ignore
     }
@@ -1428,6 +1457,21 @@ for (const el of [dlCheckCookies, dlCheckPython, dlCheckFfmpeg, dlCheckGamdl]) {
   el.addEventListener('change', () => updateDownloadHelperFromUi());
 }
 
+if (dlAutoOpenDjay) {
+  dlAutoOpenDjay.addEventListener('change', async () => {
+    updateDownloadHelperFromUi();
+    const state = loadDownloadHelper();
+    if (downloadChecklistComplete(state)) {
+      try {
+        await window.djApi.downloadsStart({ folderPath: state.folderPath, autoOpenDjay: state.autoOpenDjay !== false });
+        if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: on';
+      } catch {
+        if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
+      }
+    }
+  });
+}
+
 if (dlChecklistDoneBtn) {
   dlChecklistDoneBtn.addEventListener('click', () => {
     updateDownloadHelperFromUi();
@@ -1437,6 +1481,14 @@ if (dlChecklistDoneBtn) {
     if (dlCommandBlock) {
       dlCommandBlock.textContent = buildGamdlCommand(state.folderPath, downloadActiveSongUrl);
     }
+    window.djApi
+      .downloadsStart({ folderPath: state.folderPath, autoOpenDjay: state.autoOpenDjay !== false })
+      .then(() => {
+        if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: on';
+      })
+      .catch(() => {
+        if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
+      });
   });
 }
 
@@ -1454,6 +1506,21 @@ if (dlCopyCmdBtn) {
     const ok = await copyToClipboard(text);
     if (ok) appendLog('success', 'Command copied. Paste it in Terminal.', new Date().toISOString());
     else appendLog('error', 'Could not copy command.', new Date().toISOString());
+  });
+}
+
+if (dlRevealLastBtn) {
+  dlRevealLastBtn.addEventListener('click', async () => {
+    try {
+      const status = await window.djApi.downloadsStatus();
+      if (!status?.lastFilePath) {
+        appendLog('warning', 'No new download detected yet.', new Date().toISOString());
+        return;
+      }
+      await window.djApi.revealFile({ filePath: status.lastFilePath });
+    } catch {
+      // ignore
+    }
   });
 }
 
