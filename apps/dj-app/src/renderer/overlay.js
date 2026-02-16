@@ -73,17 +73,13 @@ function shellPath(value) {
 
 function buildCommandFromSongUrl(songUrl) {
   const helper = readDownloadHelper();
-  const baseFolderPath = helper.baseFolderPath;
-  const partyFolderPath = helper.partyFolderPath || helper.baseFolderPath;
+  const baseFolderPath = String(helper.baseFolderPath || '').trim();
+  const partyFolderPath = String(helper.partyFolderPath || helper.baseFolderPath || '').trim();
   const url = String(songUrl || '').trim();
+  const cookiesPath = shellPath(`${baseFolderPath}/cookies.txt`) || '$HOME/Desktop/gamdl/cookies.txt';
+  const outputPath = shellPath(partyFolderPath) || '$HOME/Desktop/gamdl/PulseDeck Party';
 
-  if (baseFolderPath && partyFolderPath) {
-    const cookiesPath = shellPath(`${baseFolderPath}/cookies.txt`);
-    const outputPath = shellPath(partyFolderPath);
-    return `gamdl --cookies-path \"${cookiesPath}\" --output-path \"${outputPath}\" \"${url}\" && exit`;
-  }
-
-  return `gamdl \"${url}\" && exit`;
+  return `OUT=\"${outputPath}\" && gamdl --cookies-path \"${cookiesPath}\" --output-path \"$OUT\" \"${url}\" && find \"$OUT\" -type f \\( -iname \"*.m4a\" -o -iname \"*.mp3\" -o -iname \"*.wav\" -o -iname \"*.aiff\" -o -iname \"*.aif\" -o -iname \"*.flac\" -o -iname \"*.aac\" -o -iname \"*.ogg\" -o -iname \"*.alac\" \\) -print0 | while IFS= read -r -d '' f; do b=\"$(basename \"$f\")\"; [ \"$f\" = \"$OUT/$b\" ] && continue; t=\"$OUT/$b\"; if [ -e \"$t\" ]; then i=1; n=\"\${b%.*}\"; e=\"\${b##*.}\"; while [ -e \"$OUT/\${n} (\${i}).\${e}\" ]; do i=$((i+1)); done; t=\"$OUT/\${n} (\${i}).\${e}\"; fi; mv \"$f\" \"$t\"; done && find \"$OUT\" -type f ! \\( -iname \"*.m4a\" -o -iname \"*.mp3\" -o -iname \"*.wav\" -o -iname \"*.aiff\" -o -iname \"*.aif\" -o -iname \"*.flac\" -o -iname \"*.aac\" -o -iname \"*.ogg\" -o -iname \"*.alac\" \\) -delete && find \"$OUT\" -depth -type d -empty -delete && exit`;
 }
 
 function setQueue(itemsInput) {
