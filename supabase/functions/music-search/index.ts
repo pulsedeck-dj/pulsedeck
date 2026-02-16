@@ -1,5 +1,5 @@
 // Supabase Edge Function: music-search
-// Provides typeahead search for Spotify + SoundCloud (Apple uses iTunes Search directly in the browser).
+// Provides typeahead search for Apple Music + Spotify + SoundCloud.
 //
 // Secrets required in Supabase:
 // - SPOTIFY_CLIENT_ID
@@ -145,6 +145,34 @@ async function soundCloudSearch(term: string, limit: number): Promise<SearchResu
     .filter(Boolean);
 }
 
+async function appleSearch(term: string, limit: number): Promise<SearchResult[]> {
+  const url = new URL('https://itunes.apple.com/search');
+  url.searchParams.set('term', term);
+  url.searchParams.set('media', 'music');
+  url.searchParams.set('entity', 'song');
+  url.searchParams.set('country', 'US');
+  url.searchParams.set('limit', String(limit));
+
+  const res = await fetch(url.toString(), { method: 'GET' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || data?.message || 'Apple Music search failed');
+  }
+
+  const items = Array.isArray(data?.results) ? data.results : [];
+  return items
+    .map((row: any) => {
+      const title = String(row?.trackName || '').trim();
+      const artist = String(row?.artistName || '').trim();
+      const album = String(row?.collectionName || '').trim();
+      const trackUrl = String(row?.trackViewUrl || '').trim();
+      const artworkUrl = String(row?.artworkUrl100 || '').trim();
+      if (!title || !artist || !trackUrl) return null;
+      return { title, artist, album, url: trackUrl, artworkUrl };
+    })
+    .filter(Boolean);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -171,7 +199,9 @@ Deno.serve(async (req) => {
   try {
     let results: SearchResult[] = [];
 
-    if (service === 'Spotify') {
+    if (service === 'Apple Music') {
+      results = await appleSearch(term, limit);
+    } else if (service === 'Spotify') {
       results = await spotifySearch(term, limit);
     } else if (service === 'SoundCloud') {
       results = await soundCloudSearch(term, limit);

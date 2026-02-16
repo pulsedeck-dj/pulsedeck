@@ -89,6 +89,7 @@ let pickedSong = null;
 let apiBase = readInitialApiBase();
 let activePartyCode = null;
 let supabaseClient = null;
+let supabaseConfig = readSupabaseConfig();
 
 let joinDebounceTimer = null;
 let joinInFlight = false;
@@ -270,6 +271,37 @@ async function itunesSongSearch(term, limit = 8) {
 
 async function searchMusic(service, term) {
   if (String(service || '').trim() !== 'Apple Music') return [];
+
+  // Prefer Edge Function on mobile/browsers to avoid JSONP/script-blocker failures.
+  if (supabaseConfig?.url && supabaseConfig?.anonKey) {
+    try {
+      const fnBase = supabaseConfig.url.replace('.supabase.co', '.functions.supabase.co');
+      const endpoint = `${fnBase}/music-search`;
+      const { signal, clear } = makeAbortSignal(9000);
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`
+          },
+          body: JSON.stringify({ service: 'Apple Music', term, limit: 10 }),
+          signal
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && Array.isArray(data?.results)) {
+          return data.results;
+        }
+      } finally {
+        clear();
+      }
+    } catch {
+      // fallback to JSONP path below
+    }
+  }
+
   return await itunesSongSearch(term, 10);
 }
 
@@ -315,6 +347,7 @@ async function apiRequest(path, options = {}) {
 
 function initSupabase() {
   const cfg = readSupabaseConfig();
+  supabaseConfig = cfg;
   if (!cfg) return null;
   if (!window.supabase || typeof window.supabase.createClient !== 'function') return null;
 
