@@ -85,10 +85,12 @@ const dlCheckGamdl = document.getElementById('dlCheckGamdl');
 const dlPickFolderBtn = document.getElementById('dlPickFolderBtn');
 const dlOpenGamdlBtn = document.getElementById('dlOpenGamdlBtn');
 const dlFolderLabel = document.getElementById('dlFolderLabel');
+const dlPartyFolderLabel = document.getElementById('dlPartyFolderLabel');
 const dlChecklistDoneBtn = document.getElementById('dlChecklistDoneBtn');
 const dlCommandBlock = document.getElementById('dlCommandBlock');
 const dlCopyCmdBtn = document.getElementById('dlCopyCmdBtn');
 const dlAutoOpenDjay = document.getElementById('dlAutoOpenDjay');
+const dlOpenPartyFolder = document.getElementById('dlOpenPartyFolder');
 const dlWatchLabel = document.getElementById('dlWatchLabel');
 const dlRevealLastBtn = document.getElementById('dlRevealLastBtn');
 const dlBackBtn = document.getElementById('dlBackBtn');
@@ -748,6 +750,7 @@ function loadDownloadHelper() {
   try {
     const raw = window.localStorage.getItem(DOWNLOAD_HELPER_KEY);
     const parsed = safeParseJson(raw, {});
+    const baseFolderPath = String(parsed.baseFolderPath || parsed.folderPath || '').trim();
     return {
       visitedRepo: Boolean(parsed.visitedRepo),
       hasCookies: Boolean(parsed.hasCookies),
@@ -755,7 +758,11 @@ function loadDownloadHelper() {
       hasFfmpeg: Boolean(parsed.hasFfmpeg),
       hasGamdl: Boolean(parsed.hasGamdl),
       autoOpenDjay: parsed.autoOpenDjay !== false,
-      folderPath: String(parsed.folderPath || '').trim()
+      openPartyFolder: parsed.openPartyFolder !== false,
+      baseFolderPath,
+      partyFolderPath: String(parsed.partyFolderPath || '').trim(),
+      partyName: String(parsed.partyName || '').trim(),
+      partyCode: String(parsed.partyCode || '').trim()
     };
   } catch {
     return {
@@ -765,7 +772,11 @@ function loadDownloadHelper() {
       hasFfmpeg: false,
       hasGamdl: false,
       autoOpenDjay: true,
-      folderPath: ''
+      openPartyFolder: true,
+      baseFolderPath: '',
+      partyFolderPath: '',
+      partyName: '',
+      partyCode: ''
     };
   }
 }
@@ -779,7 +790,13 @@ function saveDownloadHelper(state) {
 }
 
 function downloadChecklistComplete(state) {
-  return Boolean(state?.hasCookies && state?.hasPython && state?.hasFfmpeg && state?.hasGamdl && state?.folderPath);
+  return Boolean(
+    state?.hasCookies &&
+      state?.hasPython &&
+      state?.hasFfmpeg &&
+      state?.hasGamdl &&
+      (state?.baseFolderPath || state?.partyFolderPath)
+  );
 }
 
 function setDownloadVisible(visible) {
@@ -823,14 +840,56 @@ function buildGamdlCommand(folderPath, songUrl) {
   return `macOS / Linux:\\n${mac}\\n\\nWindows (cmd):\\n${win}`;
 }
 
+async function hydratePartyInfoIntoDownloadState(state) {
+  try {
+    const info = await window.djApi.getPartyInfo();
+    const partyCode = String(info?.partyCode || '').trim();
+    const partyName = String(info?.partyName || '').trim();
+    return {
+      ...state,
+      partyCode: partyCode || state.partyCode || '',
+      partyName: partyName || state.partyName || ''
+    };
+  } catch {
+    return state;
+  }
+}
+
+async function ensurePartyFolderForState(state) {
+  const baseFolderPath = String(state.baseFolderPath || '').trim();
+  if (!baseFolderPath) return state;
+
+  const partyCode = String(state.partyCode || '').trim();
+  const partyName = String(state.partyName || '').trim();
+
+  try {
+    const result = await window.djApi.ensurePartyFolder({ baseFolderPath, partyName, partyCode });
+    if (result?.ok && result.partyFolderPath) {
+      return { ...state, partyFolderPath: String(result.partyFolderPath || '').trim() };
+    }
+  } catch {
+    // ignore
+  }
+  return state;
+}
+
 function syncDownloadUiFromState(state) {
   if (dlCheckCookies) dlCheckCookies.checked = Boolean(state.hasCookies);
   if (dlCheckPython) dlCheckPython.checked = Boolean(state.hasPython);
   if (dlCheckFfmpeg) dlCheckFfmpeg.checked = Boolean(state.hasFfmpeg);
   if (dlCheckGamdl) dlCheckGamdl.checked = Boolean(state.hasGamdl);
   if (dlAutoOpenDjay) dlAutoOpenDjay.checked = state.autoOpenDjay !== false;
+  if (dlOpenPartyFolder) dlOpenPartyFolder.checked = state.openPartyFolder !== false;
   if (dlFolderLabel) {
-    dlFolderLabel.textContent = state.folderPath ? `Folder: ${state.folderPath}` : 'Folder: not selected';
+    dlFolderLabel.textContent = state.baseFolderPath ? `Cookies folder: ${state.baseFolderPath}` : 'Cookies folder: not selected';
+  }
+  if (dlPartyFolderLabel) {
+    const label = state.partyFolderPath
+      ? `Party folder: ${state.partyFolderPath}`
+      : state.partyName
+        ? `Party folder: (will create "${state.partyName}")`
+        : '';
+    dlPartyFolderLabel.textContent = label;
   }
   if (dlChecklistDoneBtn) {
     dlChecklistDoneBtn.disabled = !downloadChecklistComplete(state);
@@ -844,7 +903,8 @@ function syncStateFromDownloadUi(state) {
     hasPython: Boolean(dlCheckPython?.checked),
     hasFfmpeg: Boolean(dlCheckFfmpeg?.checked),
     hasGamdl: Boolean(dlCheckGamdl?.checked),
-    autoOpenDjay: dlAutoOpenDjay ? Boolean(dlAutoOpenDjay.checked) : state.autoOpenDjay !== false
+    autoOpenDjay: dlAutoOpenDjay ? Boolean(dlAutoOpenDjay.checked) : state.autoOpenDjay !== false,
+    openPartyFolder: dlOpenPartyFolder ? Boolean(dlOpenPartyFolder.checked) : state.openPartyFolder !== false
   };
 }
 
@@ -859,6 +919,8 @@ async function openDownloadFlowForSong(songUrl) {
   downloadActiveSongUrl = String(songUrl || '').trim();
 
   let state = loadDownloadHelper();
+  state = await hydratePartyInfoIntoDownloadState(state);
+  saveDownloadHelper(state);
 
   // 1st click: send them to official repo.
   if (!state.visitedRepo) {
@@ -881,16 +943,29 @@ async function openDownloadFlowForSong(songUrl) {
     return;
   }
 
+  state = await ensurePartyFolderForState(state);
+  saveDownloadHelper(state);
+  syncDownloadUiFromState(state);
+
   // After checklist complete: show command for current song.
   showDownloadStep('command');
   if (dlCommandBlock) {
-    dlCommandBlock.textContent = buildGamdlCommand(state.folderPath, songUrl);
+    const runFolder = state.partyFolderPath || state.baseFolderPath;
+    dlCommandBlock.textContent = buildGamdlCommand(runFolder, songUrl);
   }
   try {
-    await window.djApi.downloadsStart({ folderPath: state.folderPath, autoOpenDjay: state.autoOpenDjay !== false });
+    const watchFolder = state.partyFolderPath || state.baseFolderPath;
+    await window.djApi.downloadsStart({ folderPath: watchFolder, autoOpenDjay: state.autoOpenDjay !== false });
     if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: on';
   } catch {
     if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
+  }
+
+  if (state.openPartyFolder !== false) {
+    const folderToOpen = state.partyFolderPath || state.baseFolderPath;
+    if (folderToOpen) {
+      window.djApi.openPath({ path: folderToOpen }).catch(() => {});
+    }
   }
   setDownloadVisible(true);
 }
@@ -1442,7 +1517,11 @@ if (dlPickFolderBtn) {
     try {
       const result = await window.djApi.pickFolder();
       if (!result?.ok || !result.folderPath) return;
-      const state = { ...loadDownloadHelper(), folderPath: String(result.folderPath || '').trim() };
+      const state = {
+        ...loadDownloadHelper(),
+        baseFolderPath: String(result.folderPath || '').trim(),
+        partyFolderPath: ''
+      };
       saveDownloadHelper(state);
       syncDownloadUiFromState(state);
       if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
@@ -1452,7 +1531,7 @@ if (dlPickFolderBtn) {
   });
 }
 
-for (const el of [dlCheckCookies, dlCheckPython, dlCheckFfmpeg, dlCheckGamdl]) {
+for (const el of [dlCheckCookies, dlCheckPython, dlCheckFfmpeg, dlCheckGamdl, dlOpenPartyFolder]) {
   if (!el) continue;
   el.addEventListener('change', () => updateDownloadHelperFromUi());
 }
@@ -1460,10 +1539,15 @@ for (const el of [dlCheckCookies, dlCheckPython, dlCheckFfmpeg, dlCheckGamdl]) {
 if (dlAutoOpenDjay) {
   dlAutoOpenDjay.addEventListener('change', async () => {
     updateDownloadHelperFromUi();
-    const state = loadDownloadHelper();
+    let state = loadDownloadHelper();
+    state = await hydratePartyInfoIntoDownloadState(state);
+    state = await ensurePartyFolderForState(state);
+    saveDownloadHelper(state);
+    syncDownloadUiFromState(state);
     if (downloadChecklistComplete(state)) {
       try {
-        await window.djApi.downloadsStart({ folderPath: state.folderPath, autoOpenDjay: state.autoOpenDjay !== false });
+        const watchFolder = state.partyFolderPath || state.baseFolderPath;
+        await window.djApi.downloadsStart({ folderPath: watchFolder, autoOpenDjay: state.autoOpenDjay !== false });
         if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: on';
       } catch {
         if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
@@ -1473,22 +1557,35 @@ if (dlAutoOpenDjay) {
 }
 
 if (dlChecklistDoneBtn) {
-  dlChecklistDoneBtn.addEventListener('click', () => {
+  dlChecklistDoneBtn.addEventListener('click', async () => {
     updateDownloadHelperFromUi();
-    const state = loadDownloadHelper();
+    let state = loadDownloadHelper();
+    state = await hydratePartyInfoIntoDownloadState(state);
     if (!downloadChecklistComplete(state)) return;
+    state = await ensurePartyFolderForState(state);
+    saveDownloadHelper(state);
+    syncDownloadUiFromState(state);
     showDownloadStep('command');
     if (dlCommandBlock) {
-      dlCommandBlock.textContent = buildGamdlCommand(state.folderPath, downloadActiveSongUrl);
+      const runFolder = state.partyFolderPath || state.baseFolderPath;
+      dlCommandBlock.textContent = buildGamdlCommand(runFolder, downloadActiveSongUrl);
     }
+    const watchFolder = state.partyFolderPath || state.baseFolderPath;
     window.djApi
-      .downloadsStart({ folderPath: state.folderPath, autoOpenDjay: state.autoOpenDjay !== false })
+      .downloadsStart({ folderPath: watchFolder, autoOpenDjay: state.autoOpenDjay !== false })
       .then(() => {
         if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: on';
       })
       .catch(() => {
         if (dlWatchLabel) dlWatchLabel.textContent = 'Watching: off';
       });
+
+    if (state.openPartyFolder !== false) {
+      const folderToOpen = state.partyFolderPath || state.baseFolderPath;
+      if (folderToOpen) {
+        window.djApi.openPath({ path: folderToOpen }).catch(() => {});
+      }
+    }
   });
 }
 

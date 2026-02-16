@@ -178,6 +178,30 @@ function startDownloadsWatch(folderPath, options = {}) {
   };
 }
 
+function sanitizeFolderName(nameInput, fallback) {
+  const raw = sanitizeText(nameInput || '', 80);
+  const cleaned = raw
+    .replace(/[\\/:"*?<>|]+/g, ' ')
+    .replace(/\.+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const limited = cleaned.slice(0, 60);
+  return limited || fallback || 'PulseDeck Party';
+}
+
+function ensurePartyFolder(baseFolderPath, partyName, partyCode) {
+  const base = String(baseFolderPath || '').trim();
+  if (!base) throw new Error('Base folder is required');
+  const st = safeStat(base);
+  if (!st || !st.isDirectory()) throw new Error('Selected base path is not a folder');
+
+  const fallback = partyCode ? `Party-${partyCode}` : 'PulseDeck Party';
+  const folderName = sanitizeFolderName(partyName, fallback);
+  const partyFolderPath = path.join(base, folderName);
+  fs.mkdirSync(partyFolderPath, { recursive: true });
+  return partyFolderPath;
+}
+
 function summarizeQueueForLog(requests) {
   const list = Array.isArray(requests) ? requests : [];
   let queued = 0;
@@ -244,6 +268,7 @@ function buildOverlayState() {
     ok: true,
     connected: Boolean(liveConnection),
     partyCode: liveConnection?.partyCode || '',
+    partyName: liveConnection?.partyName || '',
     requests: Array.isArray(liveConnection?.lastRequests) ? liveConnection.lastRequests : []
   };
 }
@@ -646,6 +671,7 @@ async function connectDj(configInput) {
         supabase,
         apiBase: '',
         partyCode,
+        partyName: '',
         sessionId: String(row.session_id),
         token: String(row.dj_token),
         expiresAt: row.expires_at ? String(row.expires_at) : '',
@@ -656,6 +682,15 @@ async function connectDj(configInput) {
         heartbeatTimer: null,
         pollTimer: null
       };
+
+      // Party name is public metadata returned by join_party; safe to use for UI/folder naming.
+      try {
+        const meta = await supabase.rpc('join_party', { p_code: partyCode });
+        const metaRow = Array.isArray(meta?.data) ? meta.data[0] : meta?.data;
+        connection.partyName = String(metaRow?.party_name || '').trim();
+      } catch {
+        // ignore
+      }
     } else {
       const apiBase = config.apiBase.replace(/\/+$/, '');
       if (!/^https?:\/\//.test(apiBase)) {
@@ -678,6 +713,7 @@ async function connectDj(configInput) {
         supabase: null,
         apiBase,
         partyCode,
+        partyName: '',
         sessionId: claim.data.sessionId,
         token: claim.data.token,
         expiresAt: claim.data.expiresAt,
@@ -929,6 +965,19 @@ app.whenReady().then(() => {
     await shell.openExternal(url);
     return { ok: true };
   });
+  ipcMain.handle('system:open-path', async (_event, payload) => {
+    const target = String(payload?.path || '').trim();
+    if (!target) throw new Error('Missing path');
+    await shell.openPath(target);
+    return { ok: true };
+  });
+  ipcMain.handle('dj:party-info', async () => {
+    return {
+      ok: Boolean(liveConnection),
+      partyCode: liveConnection?.partyCode || '',
+      partyName: liveConnection?.partyName || ''
+    };
+  });
 
   ipcMain.handle('downloads:start', async (_event, payload) => {
     return startDownloadsWatch(payload?.folderPath, { autoOpenDjay: payload?.autoOpenDjay });
@@ -945,6 +994,13 @@ app.whenReady().then(() => {
       autoOpenDjay: Boolean(downloadsWatcher.autoOpenDjay),
       lastFilePath: downloadsWatcher.lastFilePath
     };
+  });
+  ipcMain.handle('downloads:ensure-party-folder', async (_event, payload) => {
+    const baseFolderPath = String(payload?.baseFolderPath || '').trim();
+    const partyName = String(payload?.partyName || '').trim();
+    const partyCode = String(payload?.partyCode || '').trim();
+    const partyFolderPath = ensurePartyFolder(baseFolderPath, partyName, partyCode);
+    return { ok: true, partyFolderPath };
   });
   ipcMain.handle('downloads:reveal', async (_event, payload) => {
     const filePath = String(payload?.filePath || '').trim();

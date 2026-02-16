@@ -67,6 +67,7 @@ const stopCheckingBtn = document.getElementById('stopCheckingBtn');
 const requestPanel = document.getElementById('requestPanel');
 const requestForm = document.getElementById('requestForm');
 const requestResult = document.getElementById('requestResult');
+const guestPartyName = document.getElementById('guestPartyName');
 
 const appleSearchSection = document.getElementById('appleSearchSection');
 const appleSearchTermInput = document.getElementById('appleSearchTerm');
@@ -310,6 +311,7 @@ async function supaJoinParty(code) {
 
   return {
     partyCode: String(row.party_code || code),
+    partyName: String(row.party_name || '').trim(),
     djActive: Boolean(row.dj_active),
     expiresAt: row.expires_at ? String(row.expires_at) : null
   };
@@ -429,6 +431,11 @@ async function joinPartyByCode(code) {
       ? await supaJoinParty(code)
       : await apiRequest(`/api/parties/${code}/join`, { method: 'POST' });
 
+    const partyName = String(data?.partyName || '').trim();
+    if (guestPartyName) {
+      guestPartyName.textContent = partyName ? `Party: ${partyName}` : '';
+    }
+
     if (!data.djActive) {
       activePartyCode = null;
       hidePanel(requestPanel);
@@ -440,7 +447,7 @@ async function joinPartyByCode(code) {
     stopJoinPolling();
     activePartyCode = code;
     revealPanel(requestPanel);
-    setStatus(joinResult, `Connected to party ${code}. You can send requests now.`, 'success');
+    setStatus(joinResult, `Connected to party ${code}${partyName ? `: ${partyName}` : ''}. You can send requests now.`, 'success');
     if (appleSearchTermInput) appleSearchTermInput.focus();
     return true;
   } catch (error) {
@@ -497,11 +504,16 @@ async function pollJoinStatus(code) {
         ? await supaJoinParty(code)
         : await apiRequest(`/api/parties/${code}/join`, { method: 'POST', timeoutMs: 8000 });
 
+      const partyName = String(data?.partyName || '').trim();
+      if (guestPartyName) {
+        guestPartyName.textContent = partyName ? `Party: ${partyName}` : '';
+      }
+
       if (data.djActive) {
         stopJoinPolling();
         activePartyCode = code;
         revealPanel(requestPanel);
-        setStatus(joinResult, `DJ is live. Connected to party ${code}.`, 'success');
+        setStatus(joinResult, `DJ is live. Connected to party ${code}${partyName ? `: ${partyName}` : ''}.`, 'success');
         if (appleSearchTermInput) appleSearchTermInput.focus();
         return;
       }

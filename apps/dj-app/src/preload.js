@@ -15,9 +15,12 @@ contextBridge.exposeInMainWorld('djApi', {
   closeOverlay: () => ipcRenderer.invoke('overlay:close'),
   getOverlayState: () => ipcRenderer.invoke('overlay:state'),
   openUrl: (payload) => ipcRenderer.invoke('system:open-url', payload),
+  openPath: (payload) => ipcRenderer.invoke('system:open-path', payload),
+  getPartyInfo: () => ipcRenderer.invoke('dj:party-info'),
   downloadsStart: (payload) => ipcRenderer.invoke('downloads:start', payload),
   downloadsStop: () => ipcRenderer.invoke('downloads:stop'),
   downloadsStatus: () => ipcRenderer.invoke('downloads:status'),
+  ensurePartyFolder: (payload) => ipcRenderer.invoke('downloads:ensure-party-folder', payload),
   revealFile: (payload) => ipcRenderer.invoke('downloads:reveal', payload),
   onEvent: (handler) => {
     const listener = (_event, payload) => handler(payload);

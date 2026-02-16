@@ -84,6 +84,7 @@ const authIdentity = document.getElementById('authIdentity');
 const backendStatus = document.getElementById('backendStatus');
 
 const createPartyBtn = document.getElementById('createPartyBtn');
+const partyNameInput = document.getElementById('partyNameInput');
 const createResult = document.getElementById('createResult');
 const partyCodeOut = document.getElementById('partyCodeOut');
 const djKeyOut = document.getElementById('djKeyOut');
@@ -1456,10 +1457,11 @@ createPartyBtn.addEventListener('click', async () => {
   try {
     let data;
     if (supabaseClient) {
-      const { data: rpcData, error } = await supabaseClient.rpc('create_party');
+      const partyName = String(partyNameInput?.value || '').trim();
+      const { data: rpcData, error } = await supabaseClient.rpc('create_party', { p_name: partyName });
       if (error) throw new Error(error.message || 'Failed to create party');
       const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-      data = { code: row.code, djKey: row.dj_key };
+      data = { code: row.code, djKey: row.dj_key, partyName };
     } else {
       data = await apiRequest('/api/parties', { method: 'POST', auth: true });
     }
@@ -1474,7 +1476,7 @@ createPartyBtn.addEventListener('click', async () => {
 
     setStatus(
       createResult,
-      `Party ${data.code} created. Save the DJ key now and use it only in the DJ app.`,
+      `Party ${data.code} created${data.partyName ? `: ${data.partyName}` : ''}. Save the DJ key now and use it only in the DJ app.`,
       'success'
     );
 

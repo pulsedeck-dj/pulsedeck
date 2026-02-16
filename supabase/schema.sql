@@ -10,6 +10,7 @@ create extension if not exists pgcrypto with schema extensions;
 create table if not exists public.parties (
   id uuid primary key default extensions.gen_random_uuid(),
   code text not null unique,
+  name text,
   status text not null default 'live',
   created_at timestamptz not null default now(),
   expires_at timestamptz not null default (now() + interval '12 hours'),
@@ -172,7 +173,7 @@ for each row
 execute function public.assign_request_seq_no();
 
 -- Core RPC: DJ creates a party (requires Supabase Auth login).
-create or replace function public.create_party()
+create or replace function public.create_party(p_name text default null)
 returns table(code text, dj_key text, expires_at timestamptz)
 language plpgsql
 security definer
@@ -183,6 +184,7 @@ declare
   party_code text;
   dj_key_plain text;
   inserted boolean := false;
+  party_name text := nullif(left(trim(regexp_replace(coalesce(p_name,''), '\s+', ' ', 'g')), 80), '');
 begin
   if owner is null then
     raise exception 'Not authenticated';
@@ -193,8 +195,8 @@ begin
     dj_key_plain := public.random_code(10);
 
     begin
-      insert into public.parties(code, owner_id, expires_at, dj_key_hash)
-      values (party_code, owner, now() + interval '12 hours', public.sha256_hex(dj_key_plain));
+      insert into public.parties(code, name, owner_id, expires_at, dj_key_hash)
+      values (party_code, party_name, owner, now() + interval '12 hours', public.sha256_hex(dj_key_plain));
 
       inserted := true;
       exit;
@@ -321,7 +323,7 @@ $$;
 
 -- Guest join status (no auth).
 create or replace function public.join_party(p_code text)
-returns table(ok boolean, party_code text, expires_at timestamptz, dj_active boolean)
+returns table(ok boolean, party_code text, party_name text, expires_at timestamptz, dj_active boolean)
 language plpgsql
 security definer
 set search_path = public
@@ -346,6 +348,7 @@ begin
 
   ok := true;
   party_code := party_row.code;
+  party_name := party_row.name;
   expires_at := party_row.expires_at;
 
   if party_row.expires_at <= now() then
