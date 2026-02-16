@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('djApi', {
   openOverlay: () => ipcRenderer.invoke('overlay:open'),
   closeOverlay: () => ipcRenderer.invoke('overlay:close'),
   getOverlayState: () => ipcRenderer.invoke('overlay:state'),
+  openUrl: (payload) => ipcRenderer.invoke('system:open-url', payload),
   onEvent: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('dj:event', listener);

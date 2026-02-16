@@ -112,6 +112,7 @@
             <div class="panel-head">
               <h2>Next Up</h2>
               <div class="panel-head-actions">
+                <button id="stageSetupBtn" class="btn btn-ghost btn-mini" type="button">Setup</button>
                 <button id="stageOverlayBtn" class="btn btn-ghost btn-mini" type="button">Overlay</button>
                 <span id="stageSeq" class="count-pill">--</span>
               </div>
@@ -230,6 +231,35 @@
               <button id="qrPresetIpadBtn" class="seg-btn" type="button">iPad</button>
             </div>
             <button id="qrDownloadBtn" class="btn btn-primary" type="button">Download PNG</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="setupModal" class="qr-modal hidden" aria-hidden="true">
+      <div class="qr-stage">
+        <div class="qr-light qr-light-a"></div>
+        <div class="qr-light qr-light-b"></div>
+        <section class="qr-card" role="dialog" aria-modal="true" aria-label="Playback setup">
+          <button id="setupCloseBtn" class="btn btn-ghost qr-close">Close</button>
+          <p class="eyebrow">Playback Setup</p>
+          <h2 class="qr-party-code" style="font-size: 44px; letter-spacing: 0.04em">Play Requests</h2>
+          <p class="qr-subtitle">
+            PulseDeck manages the queue and links. It does not download Apple Music tracks or use Apple Music account cookies.
+          </p>
+
+          <div style="text-align: left; margin-top: 12px">
+            <ol class="hint" style="margin: 0; padding-left: 18px">
+              <li>Connect PulseDeck DJ to your party.</li>
+              <li>In Stage or Overlay, click <strong>Open Link</strong> for the next request.</li>
+              <li>Play it in Apple Music or your DJ software (if supported).</li>
+              <li>Tap <strong>Played</strong> or <strong>Skip</strong> to keep the list clean.</li>
+            </ol>
+          </div>
+
+          <div class="qr-export" style="margin-top: 16px">
+            <button id="setupOpenAppleMusicWebBtn" class="btn btn-primary" type="button">Open Apple Music</button>
+            <button id="setupOpenGuestSiteBtn" class="btn btn-ghost" type="button">Open Guest Site</button>
           </div>
         </section>
       </div>

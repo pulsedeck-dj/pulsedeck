@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -767,6 +767,14 @@ app.whenReady().then(() => {
     return { ok: true };
   });
   ipcMain.handle('overlay:state', async () => buildOverlayState());
+  ipcMain.handle('system:open-url', async (_event, payload) => {
+    const url = String(payload?.url || '').trim();
+    if (!/^https?:\/\//i.test(url)) {
+      throw new Error('Invalid URL');
+    }
+    await shell.openExternal(url);
+    return { ok: true };
+  });
 
   createWindow();
 

@@ -42,6 +42,7 @@ const stageTitle = document.getElementById('stageTitle');
 const stageArtist = document.getElementById('stageArtist');
 const stageMeta = document.getElementById('stageMeta');
 const stageOverlayBtn = document.getElementById('stageOverlayBtn');
+const stageSetupBtn = document.getElementById('stageSetupBtn');
 const stageMarkPlayedBtn = document.getElementById('stageMarkPlayedBtn');
 const stageSkipBtn = document.getElementById('stageSkipBtn');
 const stageOpenLinkBtn = document.getElementById('stageOpenLinkBtn');
@@ -66,6 +67,11 @@ const qrUrl = document.getElementById('qrUrl');
 const qrDownloadBtn = document.getElementById('qrDownloadBtn');
 const qrPresetIphoneBtn = document.getElementById('qrPresetIphoneBtn');
 const qrPresetIpadBtn = document.getElementById('qrPresetIpadBtn');
+
+const setupModal = document.getElementById('setupModal');
+const setupCloseBtn = document.getElementById('setupCloseBtn');
+const setupOpenAppleMusicWebBtn = document.getElementById('setupOpenAppleMusicWebBtn');
+const setupOpenGuestSiteBtn = document.getElementById('setupOpenGuestSiteBtn');
 
 let unsubscribe = null;
 let queueItems = [];
@@ -689,6 +695,17 @@ function setQrVisible(visible) {
   }
 }
 
+function setSetupVisible(visible) {
+  if (!setupModal) return;
+  if (visible) {
+    setupModal.classList.remove('hidden');
+    setupModal.setAttribute('aria-hidden', 'false');
+  } else {
+    setupModal.classList.add('hidden');
+    setupModal.setAttribute('aria-hidden', 'true');
+  }
+}
+
 function setQrPreset(preset) {
   qrExportPreset = preset === 'ipad' ? 'ipad' : 'iphone';
   if (qrPresetIphoneBtn) qrPresetIphoneBtn.classList.toggle('is-active', qrExportPreset === 'iphone');
@@ -1128,6 +1145,7 @@ qrModal.addEventListener('click', (event) => {
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     setQrVisible(false);
+    setSetupVisible(false);
   }
 });
 
@@ -1143,6 +1161,44 @@ if (stageOverlayBtn) {
       await window.djApi.openOverlay();
     } catch (error) {
       appendLog('error', error.message || 'Could not open overlay.', new Date().toISOString());
+    }
+  });
+}
+
+if (stageSetupBtn) {
+  stageSetupBtn.addEventListener('click', () => {
+    setSetupVisible(true);
+  });
+}
+
+if (setupCloseBtn) {
+  setupCloseBtn.addEventListener('click', () => setSetupVisible(false));
+}
+
+if (setupModal) {
+  setupModal.addEventListener('click', (event) => {
+    if (event.target === setupModal) setSetupVisible(false);
+  });
+}
+
+if (setupOpenAppleMusicWebBtn) {
+  setupOpenAppleMusicWebBtn.addEventListener('click', async () => {
+    try {
+      await window.djApi.openUrl({ url: 'https://music.apple.com/' });
+    } catch {
+      // ignore
+    }
+  });
+}
+
+if (setupOpenGuestSiteBtn) {
+  setupOpenGuestSiteBtn.addEventListener('click', async () => {
+    const payload = lastSharePayload || (await refreshShare());
+    if (!payload?.url) return;
+    try {
+      await window.djApi.openUrl({ url: payload.url });
+    } catch {
+      // ignore
     }
   });
 }
