@@ -535,7 +535,8 @@ function fillRequestFieldsFromSearchResult(result) {
   if (pickedSongTitle) pickedSongTitle.textContent = pickedSong.title || 'Selected song';
   if (pickedSongArtist) pickedSongArtist.textContent = pickedSong.artist ? `by ${pickedSong.artist}` : '';
   if (pickedSongPanel) pickedSongPanel.classList.remove('hidden');
-  setStatus(appleSearchStatus, `Selected: ${pickedSong.title} - ${pickedSong.artist}`, 'success');
+  // Keep the search area focused on search feedback; the selected card is the confirmation.
+  setStatus(appleSearchStatus, 'Song selected. Tap Submit to send it to the DJ.', 'success');
 }
 
 function renderAppleSearchResults(items) {
@@ -677,6 +678,7 @@ async function submitSongRequest(input, options = {}) {
 
     const seqNo = data.seqNo ?? data.seq_no;
     setStatus(requestResult, `Queued #${seqNo}: ${data.title} - ${data.artist}`, 'success');
+    setStatus(appleSearchStatus, 'Request sent to the DJ.', 'success');
 
     pickedSong = null;
     if (pickedSongPanel) pickedSongPanel.classList.add('hidden');
