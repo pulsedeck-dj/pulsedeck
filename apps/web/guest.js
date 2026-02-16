@@ -549,6 +549,11 @@ function fillRequestFieldsFromSearchResult(result) {
   if (pickedSongTitle) pickedSongTitle.textContent = pickedSong.title || 'Selected song';
   if (pickedSongArtist) pickedSongArtist.textContent = pickedSong.artist ? `by ${pickedSong.artist}` : '';
   if (pickedSongPanel) pickedSongPanel.classList.remove('hidden');
+
+  // Once a song is picked, clear the search input and results to reduce confusion.
+  // Guests can type again to bring results back.
+  if (appleSearchTermInput) appleSearchTermInput.value = '';
+  if (appleSearchResults) appleSearchResults.textContent = '';
   // Keep the search area focused on search feedback; the selected card is the confirmation.
   setStatus(appleSearchStatus, 'Song selected. Tap Submit to send it to the DJ.', 'success');
 }
