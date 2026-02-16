@@ -1005,8 +1005,8 @@ function drawRoundRect(ctx, x, y, w, h, r) {
 }
 
 function presetSpec(preset) {
-  if (preset === 'ipad') return { key: 'ipad', w: 2048, h: 2732, label: 'iPad' };
-  return { key: 'iphone', w: 1170, h: 2532, label: 'iPhone' };
+  if (preset === 'ipad') return { key: 'ipad', w: 2732, h: 2048, label: 'iPad Landscape' };
+  return { key: 'iphone', w: 2532, h: 1170, label: 'iPhone Landscape' };
 }
 
 async function buildQrPosterPng(payload, preset) {
@@ -1045,12 +1045,12 @@ async function buildQrPosterPng(payload, preset) {
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // Frosted card.
-  const pad = Math.round(spec.w * 0.08);
+  // Frosted landscape card.
+  const pad = Math.round(spec.w * 0.055);
   const cardX = pad;
   const cardW = spec.w - pad * 2;
-  const cardY = Math.round(spec.h * 0.10);
-  const cardH = Math.round(spec.h * 0.80);
+  const cardY = Math.round(spec.h * 0.11);
+  const cardH = Math.round(spec.h * 0.78);
   drawRoundRect(ctx, cardX, cardY, cardW, cardH, 52);
   ctx.fillStyle = 'rgba(255,255,255,0.10)';
   ctx.fill();
@@ -1058,38 +1058,39 @@ async function buildQrPosterPng(payload, preset) {
   ctx.strokeStyle = 'rgba(255,255,255,0.18)';
   ctx.stroke();
 
-  const textX = cardX + Math.round(cardW * 0.08);
-  let y = cardY + Math.round(cardH * 0.11);
+  const leftX = cardX + Math.round(cardW * 0.07);
+  const leftW = Math.round(cardW * 0.58);
+  let y = cardY + Math.round(cardH * 0.22);
 
   ctx.fillStyle = 'rgba(255,255,255,0.84)';
-  ctx.font = '700 42px "Space Grotesk", system-ui, -apple-system';
-  ctx.fillText('PulseDeck', textX, y);
+  ctx.font = `700 ${Math.round(cardH * 0.12)}px "Space Grotesk", system-ui, -apple-system`;
+  ctx.fillText('PulseDeck', leftX, y, leftW);
 
-  y += 72;
+  y += Math.round(cardH * 0.23);
   ctx.fillStyle = '#ffffff';
-  ctx.font = '700 92px "Bebas Neue", Impact, system-ui';
-  ctx.fillText(partyCode, textX, y);
+  ctx.font = `700 ${Math.round(cardH * 0.28)}px "Bebas Neue", Impact, system-ui`;
+  ctx.fillText(partyCode, leftX, y, leftW);
 
-  y += 44;
+  y += Math.round(cardH * 0.14);
   ctx.fillStyle = 'rgba(255,255,255,0.78)';
-  ctx.font = '600 34px "Space Grotesk", system-ui, -apple-system';
-  ctx.fillText('Scan to request a song', textX, y);
+  ctx.font = `600 ${Math.round(cardH * 0.09)}px "Space Grotesk", system-ui, -apple-system`;
+  ctx.fillText('Scan to request a song', leftX, y, leftW);
 
   const qrImg = await loadImageFromDataUrl(qrDataUrl);
-  const qrSize = Math.round(Math.min(cardW * 0.72, spec.w * 0.76));
-  const qrX = Math.round(cardX + (cardW - qrSize) / 2);
-  const qrY = Math.round(cardY + cardH * 0.30);
-  drawRoundRect(ctx, qrX - 18, qrY - 18, qrSize + 36, qrSize + 36, 36);
+  const qrSize = Math.round(Math.min(cardH * 0.68, cardW * 0.30));
+  const qrX = Math.round(cardX + cardW * 0.68);
+  const qrY = Math.round(cardY + (cardH - qrSize) / 2);
+  drawRoundRect(ctx, qrX - 18, qrY - 18, qrSize + 36, qrSize + 36, 30);
   ctx.fillStyle = '#ffffff';
   ctx.fill();
   ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
   if (guestUrl) {
-    const maxChars = spec.w >= 2000 ? 58 : 42;
+    const maxChars = spec.w >= 2500 ? 74 : 60;
     const urlDisplay = guestUrl.length > maxChars ? `${guestUrl.slice(0, maxChars - 1)}…` : guestUrl;
     ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.font = '500 26px "Space Grotesk", system-ui, -apple-system';
-    ctx.fillText(urlDisplay, textX, cardY + cardH - 64);
+    ctx.font = `500 ${Math.round(cardH * 0.06)}px "Space Grotesk", system-ui, -apple-system`;
+    ctx.fillText(urlDisplay, leftX, cardY + cardH - Math.round(cardH * 0.08), leftW);
   }
 
   return canvas.toDataURL('image/png');
