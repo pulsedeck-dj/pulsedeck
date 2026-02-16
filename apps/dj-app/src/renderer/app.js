@@ -824,17 +824,20 @@ function basename(pathLike) {
   return parts[parts.length - 1] || value;
 }
 
-function tildePathIfHome(value) {
+function shellPath(value) {
   const text = String(value || '').trim();
   if (!text) return '';
-  // Keep it simple: if user chose a Desktop folder, they usually want to see ~/Desktop/NAME.
-  const desktopMatch = text.match(/\/Users\/[^/]+\/Desktop\/(.+)$/);
-  if (desktopMatch) return `~/Desktop/${desktopMatch[1]}`;
+
+  // Avoid `cd "~/..."` because quoting prevents ~ expansion in most shells.
+  // Use $HOME so it works inside quotes: cd "$HOME/..."
+  const homeMatch = text.match(/^\/Users\/[^/]+\/(.+)$/);
+  if (homeMatch) return `$HOME/${homeMatch[1]}`;
+
   return text;
 }
 
 function buildGamdlCommand(folderPath, songUrl) {
-  const folder = tildePathIfHome(folderPath);
+  const folder = shellPath(folderPath);
   const url = String(songUrl || '').trim();
   // DJ app is primarily macOS; keep this as a single copy/paste line.
   // `&& exit` closes the terminal session after a successful download.
