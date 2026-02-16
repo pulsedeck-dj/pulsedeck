@@ -240,12 +240,13 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
   const id = sanitizeText(request?.id, 128);
   if (!id) return null;
 
-  const parsedSeqNo = Number(request?.seqNo);
+  const parsedSeqNo = Number(request?.seqNo ?? request?.seq_no);
   const seqNo = Number.isFinite(parsedSeqNo) && parsedSeqNo > 0 ? Math.floor(parsedSeqNo) : 0;
 
   let createdAt = new Date().toISOString();
-  if (request?.createdAt) {
-    const date = new Date(request.createdAt);
+  const createdRaw = request?.createdAt ?? request?.created_at;
+  if (createdRaw) {
+    const date = new Date(createdRaw);
     if (!Number.isNaN(date.getTime())) {
       createdAt = date.toISOString();
     }
@@ -255,8 +256,9 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
   const status = statusRaw === 'played' ? 'played' : statusRaw === 'rejected' ? 'rejected' : 'queued';
 
   let playedAt = null;
-  if (request?.playedAt) {
-    const date = new Date(request.playedAt);
+  const playedRaw = request?.playedAt ?? request?.played_at;
+  if (playedRaw) {
+    const date = new Date(playedRaw);
     if (!Number.isNaN(date.getTime())) {
       playedAt = date.toISOString();
     }
@@ -277,6 +279,24 @@ function sanitizeQueueRequest(request, fallbackPartyCode) {
   };
 }
 
+function queueFingerprint(requests) {
+  const list = Array.isArray(requests) ? requests : [];
+  return list
+    .map((r) => {
+      return [
+        r.id,
+        r.seqNo,
+        r.status,
+        r.title,
+        r.artist,
+        r.service,
+        r.songUrl || '',
+        r.playedAt || ''
+      ].join('|');
+    })
+    .join('\n');
+}
+
 function emitQueueReplace(connection, requestsInput) {
   const list = [];
   const seen = new Set();
@@ -294,13 +314,20 @@ function emitQueueReplace(connection, requestsInput) {
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 
-  connection.requestIds = new Set(list.map((entry) => entry.id));
+  const fp = queueFingerprint(list);
+  const prevFp = connection.lastQueueFingerprint || '';
 
-  emit({
-    type: 'queue:replace',
-    requests: list,
-    at: new Date().toISOString()
-  });
+  connection.requestIds = new Set(list.map((entry) => entry.id));
+  connection.lastQueueFingerprint = fp;
+
+  // Avoid UI flicker: only re-render the full list when something changed.
+  if (fp !== prevFp) {
+    emit({
+      type: 'queue:replace',
+      requests: list,
+      at: new Date().toISOString()
+    });
+  }
 
   return list;
 }
@@ -464,6 +491,7 @@ async function connectDj(configInput) {
         expiresAt: row.expires_at ? String(row.expires_at) : '',
         requestIds: new Set(),
         lastQueueSummary: null,
+        lastQueueFingerprint: '',
         socket: null,
         heartbeatTimer: null,
         pollTimer: null
@@ -495,6 +523,7 @@ async function connectDj(configInput) {
         expiresAt: claim.data.expiresAt,
         requestIds: new Set(),
         lastQueueSummary: null,
+        lastQueueFingerprint: '',
         socket: null,
         heartbeatTimer: null,
         pollTimer: null

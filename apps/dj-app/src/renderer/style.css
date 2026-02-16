@@ -451,17 +451,18 @@ input:focus {
 
 .request-seq,
 .request-service {
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 5px 10px;
 }
 
 .request-seq {
   border: 1px solid #cde5f1;
   background: #edfaff;
   color: #1c6783;
+  font-weight: 800;
 }
 
 .request-service {
