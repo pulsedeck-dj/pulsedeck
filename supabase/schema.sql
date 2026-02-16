@@ -354,14 +354,20 @@ begin
     return;
   end if;
 
-  if party_row.active_dj_session_id is null then
-    dj_active := false;
-    return next;
-    return;
-  end if;
+  -- Consider any active DJ session for this party as "DJ connected" so guests don't get stuck
+  -- if `active_dj_session_id` is missing/outdated.
+  select * into session_row
+    from public.dj_sessions s
+   where s.party_id = party_row.id
+     and s.active = true
+   order by s.heartbeat_at desc
+   limit 1;
 
-  select * into session_row from public.dj_sessions where id = party_row.active_dj_session_id;
-  dj_active := session_row.active and session_row.heartbeat_at > now() - interval '35 seconds';
+  if not found then
+    dj_active := false;
+  else
+    dj_active := session_row.heartbeat_at > now() - interval '35 seconds';
+  end if;
   return next;
 end;
 $$;
